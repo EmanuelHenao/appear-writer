@@ -643,7 +643,7 @@ const arteCuaderno: TemplateDef = {
     const line = 64;
     const paper = (
       <>
-        <div style={{ position: "absolute", inset: 0, background: `repeating-linear-gradient(180deg, transparent 0, transparent ${line - 2}px, ${p.accent2}66 ${line - 2}px, ${p.accent2}66 ${line}px)`, backgroundPosition: "0 40px" }} />
+        <div style={{ position: "absolute", inset: 0, backgroundImage: `repeating-linear-gradient(180deg, transparent 0, transparent ${line - 2}px, ${p.accent2}66 ${line - 2}px, ${p.accent2}66 ${line}px)`, backgroundPosition: "0 40px" }} />
         <div style={{ position: "absolute", top: 0, bottom: 0, left: 140, width: 3, background: "#D9534F99" }} />
         <Grain id={`cu-${spec.index}`} opacity={0.18} />
       </>
