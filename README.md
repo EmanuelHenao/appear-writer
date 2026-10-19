@@ -25,12 +25,19 @@ La IA es opcional. Cada ayuda (sugerencia de estilo, capítulos, ortografía, t�
 - Fondos con fotos reales de Unsplash o Pexels, con su crédito, o generados con IA (requiere una key de OpenAI).
 - Patrones generativos sin IA ni keys (v3): 19 tipos entre geométricos (Truchet, Bauhaus, semitono…), funciones matemáticas (campo de flujo, Lissajous, espirógrafo, curvas de nivel, Voronoi, árbol fractal…), emojis y ASCII. Marcas en una lista cuáles se usan; cada imagen lleva uno al azar o varios superpuestos. Se ajustan intensidad, tamaño y variación.
 - Botón «Aleatorio» para probar un diseño al azar con lo marcado en el panel (con «Anterior» para volver) y «4 al azar».
-- «Mis plantillas»: marca con ☆ las propuestas que te gusten y reutilízalas con otros textos.
+- «Mis plantillas»: guarda las propuestas que te gusten y reutilízalas con otros textos.
+- Texto de la publicación y hashtags sin IA (v5): plantillas con tres estilos y hashtags sacados de las palabras del texto; se editan y se copian. La IA queda como botón opcional.
+- Fondos con tus propias fotos, sin ninguna key (v5).
+- Lote: elige cualquier imagen para ajustarla antes de descargar el ZIP (v5).
+- Atajos: ← → cambian de propuesta, R da una al azar y Ctrl+Z vuelve a la anterior.
 
 **Libros**
 - Chats de WhatsApp de Android e iOS, en español o inglés, con las fotos del .zip.
 - Un mensaje por página, burbujas de chat (v2) o mensajes seguidos. El nombre, la fecha y la hora de cada mensaje se activan por separado.
-- Capítulos por mes en los chats y por títulos en los textos.
+- Capítulos de los chats por mes, por año o por silencios (cuando pasan varios días sin mensajes), y por títulos en los textos.
+- Revisión ortográfica sin IA con un diccionario de español: propone tildes, abreviaturas y palabras dudosas, y solo cambia las que marques.
+- Tus propias fotos en las aperturas de capítulo.
+- Visor a doble página con miniaturas, zoom y navegación.
 - Cuatro portadas, cuatro tipografías y cuatro paletas; portadilla, dedicatoria, índice con números de página, cabeceras y ornamentos.
 - PDF con sangrado para imprenta (A5, 6 × 9 in o cuadrado de 21 cm), EPUB 3 validado con epubcheck y PNG por página.
 
@@ -87,3 +94,4 @@ Para validar también el EPUB con epubcheck, indica la ruta del jar: `EPUBCHECK_
 - [x] v2: chat con burbujas y cuatro plantillas nuevas (Titular, Franja, Marco, Cuaderno)
 - [x] v3: patrones generativos, diseño aleatorio y plantillas propias
 - [x] v4: estudio en dos columnas con la vista previa siempre visible, opciones plegables y visor de libro a doble página
+- [x] v5: mejoras sin IA (texto y hashtags, ortografía, capítulos por año o silencios, fotos propias), lote ajustable e imagen Docker de 1,3 GB
