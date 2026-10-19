@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Check, Choice, Notice, Panel, Section, SuggestDot, TextInput, saveBlob } from "@/components/ui";
+import { ChevronLeft, ChevronRight, Minus, Plus } from "@/components/icons";
+import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
+import { Button, Check, Choice, Notice, Section, SuggestDot, TextInput, saveBlob } from "@/components/ui";
 import { useSettings } from "@/components/useSettings";
 import { describeSource, type Source } from "@/book/model";
 import { BOOK_PALETTES, COVERS, PAGE_SIZES, suggestedBookOptions, type BookOptions } from "@/book/options";
@@ -37,6 +39,11 @@ export function BookStudio() {
   const [msg, setMsg] = useState<{ tone: "ok" | "error" | "info"; text: string } | null>(null);
   const [version, setVersion] = useState(0);
   const [pages, setPages] = useState<number | null>(null);
+  // Visor de la vista previa (lo maneja el propio documento del libro).
+  const frame = useRef<HTMLIFrameElement>(null);
+  const wanted = useRef<{ cols: 1 | 2; zoom: number }>({ cols: 2, zoom: 0 });
+  const [view, setView] = useState({ cols: 2 as 1 | 2, zoom: 1, fit: true, page: 1 });
+  const [shown, setShown] = useState(0);
   const [paste, setPaste] = useState({ open: false, text: "", title: "" });
   const [drag, setDrag] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
@@ -65,11 +72,27 @@ export function BookStudio() {
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      if (e.data?.type === "book-ready") setPages(e.data.pages);
+      if (!frame.current || e.source !== frame.current.contentWindow) return;
+      if (e.data?.type === "book-ready") {
+        setPages(e.data.pages);
+        // La vista elegida se mantiene al recargar la vista previa.
+        const w = wanted.current;
+        if (w.cols !== 2 || w.zoom) frame.current.contentWindow?.postMessage({ type: "book-control", cols: w.cols, zoom: w.zoom }, "*");
+      }
+      if (e.data?.type === "book-view") {
+        setShown(e.data.shown);
+        setView({ cols: e.data.cols, zoom: e.data.zoom, fit: wanted.current.zoom === 0, page: e.data.page });
+      }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
   }, []);
+
+  function control(msg: { cols?: 1 | 2; zoom?: number; goto?: number }) {
+    if (msg.cols) wanted.current.cols = msg.cols;
+    if (msg.zoom !== undefined) wanted.current.zoom = msg.zoom;
+    frame.current?.contentWindow?.postMessage({ type: "book-control", ...msg }, "*");
+  }
 
   const suggested = useMemo(() => (book ? suggestedBookOptions(book.sources) : null), [book]);
   const hasChats = !!book?.sources.some((s) => s.kind === "whatsapp");
@@ -225,85 +248,80 @@ export function BookStudio() {
 
   const sug = suggested;
   const S = <T,>(a: T, b: T | undefined) => (b !== undefined && JSON.stringify(a) === JSON.stringify(b) ? true : undefined);
+  const hasSources = !!book?.sources.length;
+  const aiOn = o ? AI_STEPS.filter((s) => o.ai[s.id]).length : 0;
+  const outputsLabel = o
+    ? (["pdf", "epub", "png"] as const)
+        .filter((f) => o.outputs[f])
+        .map((f) => (f === "png" ? "PNG por página" : f.toUpperCase()))
+        .join(" · ")
+    : "";
 
-  return (
-    <main className="mx-auto grid w-full max-w-[1600px] flex-1 gap-6 px-4 py-7 sm:px-8 lg:grid-cols-[340px_440px_minmax(0,1fr)]">
+  const steps: Step[] = [
+    { id: "paso-1", label: "Fuentes", done: hasSources, current: !hasSources },
+    { id: "paso-2", label: "Opciones del libro", current: hasSources },
+  ];
+
+  const footer = (
+    <div className="flex flex-col gap-2">
+      {msg ? <Notice tone={msg.tone}>{msg.text}</Notice> : null}
+      <Button variant="primary" className="w-full" disabled={!hasSources} busy={busy === "generate"} onClick={generate}>
+        Generar libro
+      </Button>
+      <span className="text-center text-xs text-muted">
+        {hasSources && o
+          ? [outputsLabel || "Marca un formato de salida", pages ? `${pages.toLocaleString("es")} págs.` : "", PAGE_SIZES[o.pageSize].label].filter(Boolean).join(" · ")
+          : "Añade una fuente para empezar"}
+      </span>
+    </div>
+  );
+
+  const dropProps = {
+    onDragOver: (e: React.DragEvent) => {
+      e.preventDefault();
+      setDrag(true);
+    },
+    onDragLeave: () => setDrag(false),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      setDrag(false);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length) void addSources(files);
+    },
+  };
+  const pickButtons = (small: boolean) => (
+    <div className="flex flex-wrap justify-center gap-2">
+      <Button className={small ? "h-8 px-3 text-[13px]" : "h-9"} onClick={() => fileInput.current?.click()} busy={busy === "import"}>
+        {small ? "Elegir" : "Elegir archivos"}
+      </Button>
+      <Button className={small ? "h-8 px-3 text-[13px]" : "h-9"} onClick={() => setPaste((p) => ({ ...p, open: !p.open }))}>
+        {small ? "Pegar texto" : "Pegar un texto"}
+      </Button>
+    </div>
+  );
+
+  const aside = (
+    <>
       {/* Paso 1 · Fuentes */}
-      <section className="flex min-w-0 flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div className="eyebrow">Paso 1 · Fuentes</div>
+      <section id="paso-1" className="flex scroll-mt-4 flex-col gap-3">
+        <StepHead label="Paso 1 · Fuentes">
           {book ? (
-            <button onClick={newBook} className="text-sm text-muted hover:text-text">
+            <button onClick={newBook} className="text-xs text-accent hover:underline">
               Empezar otro libro
             </button>
           ) : null}
-        </div>
-        <h1 className="font-display text-[28px] font-bold leading-[1.1] tracking-tight">Tus textos, en orden</h1>
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDrag(true);
-          }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDrag(false);
-            const files = Array.from(e.dataTransfer.files);
-            if (files.length) void addSources(files);
-          }}
-          className={`flex flex-col items-center gap-2 rounded-xl border border-dashed p-6 text-center leading-relaxed text-muted ${drag ? "border-accent bg-accent-soft" : "border-line-strong"}`}
-        >
-          <span>Arrastra aquí un chat de WhatsApp (.txt o .zip), .docx, .pdf o .txt</span>
-          <div className="flex flex-wrap justify-center gap-2">
-            <Button className="h-9" onClick={() => fileInput.current?.click()} busy={busy === "import"}>
-              Elegir archivos
-            </Button>
-            <Button className="h-9" onClick={() => setPaste((p) => ({ ...p, open: !p.open }))}>
-              Pegar un texto
-            </Button>
-          </div>
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            accept=".txt,.zip,.docx,.pdf,.md"
-            className="sr-only"
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? []);
-              e.target.value = "";
-              if (files.length) void addSources(files);
-            }}
-          />
-        </div>
-        {paste.open ? (
-          <div className="flex flex-col gap-2 rounded-xl border border-line bg-panel p-3">
-            <TextInput value={paste.title} onChange={(e) => setPaste({ ...paste, title: e.target.value })} placeholder="Título (opcional)" aria-label="Título del texto" />
-            <textarea
-              rows={8}
-              value={paste.text}
-              onChange={(e) => setPaste({ ...paste, text: e.target.value })}
-              placeholder="Pega aquí poemas, notas o un capítulo. Separa párrafos con una línea en blanco."
-              aria-label="Texto"
-              className="rounded-lg border border-line bg-ink p-3 text-sm leading-relaxed"
-            />
-            <Button variant="primary" className="h-9" disabled={!paste.text.trim()} busy={busy === "import"} onClick={() => addSources([], paste)}>
-              Añadir texto
-            </Button>
-          </div>
-        ) : null}
-        <p className="text-xs leading-relaxed text-muted">
-          En WhatsApp: abre el chat › Más › Exportar chat. Con «Incluir archivos» llegan también las fotos (sube el .zip).
-        </p>
+        </StepHead>
+        <h1 className="font-display text-2xl font-bold leading-[1.1] tracking-tight">Tus textos, en orden</h1>
         {book?.sources.length ? (
           <ol className="flex flex-col gap-2">
             {book.sources.map((s, i) => (
-              <li key={s.id} className="flex items-start justify-between gap-3 rounded-[10px] border border-line bg-panel px-3.5 py-3">
-                <div className="min-w-0">
-                  <div className="truncate font-semibold">{s.name}</div>
+              <li key={s.id} className="flex items-center justify-between gap-3 rounded-[10px] border border-line bg-ink py-2.5 pl-3 pr-1.5">
+                <span className="flex-none font-mono text-xs text-muted">{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold">{s.name}</div>
                   <div className="mt-0.5 text-xs text-muted">{describeSource(s)}</div>
                 </div>
-                <div className="flex flex-none items-center gap-1 text-sm">
-                  <span className="mr-1 font-mono text-xs text-muted">{i + 1}</span>
+                <div className="flex flex-none items-center text-sm">
                   <IconBtn label="Subir" disabled={i === 0} onClick={() => patch({ order: move(book.sources, i, -1) })}>
                     ↑
                   </IconBtn>
@@ -311,7 +329,7 @@ export function BookStudio() {
                     ↓
                   </IconBtn>
                   {confirmRemove === s.id ? (
-                    <button className="text-xs text-danger hover:underline" onClick={() => patch({ removeSource: s.id }).then(() => setConfirmRemove(null))}>
+                    <button className="px-1 text-xs text-danger hover:underline" onClick={() => patch({ removeSource: s.id }).then(() => setConfirmRemove(null))}>
                       Quitar
                     </button>
                   ) : (
@@ -324,24 +342,75 @@ export function BookStudio() {
             ))}
           </ol>
         ) : null}
-        {msg ? <Notice tone={msg.tone}>{msg.text}</Notice> : null}
-        <Link href="/galeria" className="text-sm text-accent hover:underline">
-          Ver libros guardados
-        </Link>
+        {hasSources ? (
+          <div
+            {...dropProps}
+            className={`flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-dashed px-3 py-2.5 text-[13px] text-muted ${drag ? "border-accent bg-accent-soft" : "border-line-strong"}`}
+          >
+            <span>Arrastra más archivos aquí</span>
+            {pickButtons(true)}
+          </div>
+        ) : (
+          <div
+            {...dropProps}
+            className={`flex flex-col items-center gap-3 rounded-xl border border-dashed p-6 text-center leading-relaxed text-muted ${drag ? "border-accent bg-accent-soft" : "border-line-strong"}`}
+          >
+            <span>Arrastra aquí un chat de WhatsApp (.txt o .zip), .docx, .pdf o .txt</span>
+            {pickButtons(false)}
+          </div>
+        )}
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          accept=".txt,.zip,.docx,.pdf,.md"
+          className="sr-only"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            e.target.value = "";
+            if (files.length) void addSources(files);
+          }}
+        />
+        {paste.open ? (
+          <div className="flex flex-col gap-2 rounded-xl border border-line bg-ink p-3">
+            <TextInput value={paste.title} onChange={(e) => setPaste({ ...paste, title: e.target.value })} placeholder="Título (opcional)" aria-label="Título del texto" />
+            <textarea
+              rows={8}
+              value={paste.text}
+              onChange={(e) => setPaste({ ...paste, text: e.target.value })}
+              placeholder="Pega aquí poemas, notas o un capítulo. Separa párrafos con una línea en blanco."
+              aria-label="Texto"
+              className="rounded-lg border border-line bg-panel p-3 text-sm leading-relaxed"
+            />
+            <Button variant="primary" className="h-9" disabled={!paste.text.trim()} busy={busy === "import"} onClick={() => addSources([], paste)}>
+              Añadir texto
+            </Button>
+          </div>
+        ) : null}
+        {!hasSources ? (
+          <p className="text-xs leading-relaxed text-muted">
+            En WhatsApp: abre el chat › Más › Exportar chat. Con «Incluir archivos» llegan también las fotos (sube el .zip).
+          </p>
+        ) : null}
       </section>
 
       {/* Paso 2 · Opciones */}
-      <Panel
-        eyebrow="Paso 2 · Opciones del libro"
-        title="Todo viene sugerido, todo se cambia"
-        aside={<span className="whitespace-nowrap rounded-full border border-suggest-line px-2.5 py-1 text-xs text-suggest">● sugerido</span>}
-        className="lg:max-h-[calc(100vh-120px)]"
-      >
-        {!o || !book?.sources.length ? (
-          <p className="py-6 text-sm leading-relaxed text-muted">Cuando añadas una fuente, aquí aparecen todas las opciones del libro con los valores que te sugerimos.</p>
+      <section id="paso-2" className="flex scroll-mt-4 flex-col">
+        <StepHead label="Paso 2 · Opciones">
+          {o && hasSources ? (
+            <span className="flex items-center gap-3">
+              <button type="button" onClick={() => patch({ resetOptions: true })} className="text-xs text-accent hover:underline">
+                Volver a lo sugerido
+              </button>
+              <span className="whitespace-nowrap rounded-full border border-suggest-line px-2 py-0.5 text-[11px] text-suggest">● sugerido</span>
+            </span>
+          ) : null}
+        </StepHead>
+        {!o || !book || !hasSources ? (
+          <p className="py-4 text-sm leading-relaxed text-muted">Cuando añadas una fuente, aquí aparecen todas las opciones del libro con los valores que te sugerimos.</p>
         ) : (
-          <>
-            <Section title="Tamaño de página">
+          <div className="mt-2">
+            <Section title="Tamaño de página" defaultOpen summary={`${PAGE_SIZES[o.pageSize].label}${o.bleed ? " · con sangrado" : ""}`} suggested={o.pageSize === sug?.pageSize && o.bleed === sug?.bleed}>
               <div className="grid grid-cols-3 gap-2">
                 {(Object.keys(PAGE_SIZES) as (keyof typeof PAGE_SIZES)[]).map((k) => (
                   <Choice key={k} name="tam" value={k} checked={o.pageSize === k} onSelect={() => up("pageSize", k)} suggested={sug?.pageSize === k}>
@@ -355,7 +424,7 @@ export function BookStudio() {
               </Check>
             </Section>
 
-            <Section title="Tipografía">
+            <Section title="Tipografía" summary={`${FONTS[o.font].label} · ${FONT_SCALE_LABEL[o.fontScale]}`} suggested={o.font === sug?.font && o.fontScale === sug?.fontScale}>
               <div className="grid grid-cols-2 gap-2">
                 {BOOK_FONT_CHOICES.map((f) => (
                   <Choice key={f} name="font" value={f} checked={o.font === f} onSelect={() => up("font", f as BookOptions["font"])} suggested={sug?.font === f}>
@@ -377,7 +446,7 @@ export function BookStudio() {
               </div>
             </Section>
 
-            <Section title="Paleta">
+            <Section title="Paleta" summary={BOOK_PALETTES.find((p) => p.id === o.palette)?.label ?? o.palette} suggested={o.palette === sug?.palette}>
               <div className="grid grid-cols-2 gap-2">
                 {BOOK_PALETTES.map((p) => (
                   <Choice key={p.id} name="bpal" value={p.id} checked={o.palette === p.id} onSelect={() => up("palette", p.id)} suggested={sug?.palette === p.id}>
@@ -392,7 +461,7 @@ export function BookStudio() {
               </div>
             </Section>
 
-            <Section title="Portada" note={o.ai.cover && book.ai.coverReason ? <SuggestDot kind="ia" /> : undefined}>
+            <Section title="Portada" summary={COVERS.find((c) => c.id === o.cover.template)?.label ?? ""} suggested={o.ai.cover && book.ai.coverReason ? "ia" : o.cover.template === sug?.cover.template}>
               <div className="grid grid-cols-2 gap-2">
                 {COVERS.map((c) => (
                   <Choice key={c.id} name="cover" value={c.id} checked={o.cover.template === c.id} onSelect={() => upCover({ template: c.id })} suggested={sug?.cover.template === c.id}>
@@ -416,7 +485,7 @@ export function BookStudio() {
               </label>
             </Section>
 
-            <Section title="Contenido">
+            <Section title="Contenido" summary={contentSummary(o, hasChats)} suggested={S(o.content, sug?.content)}>
               <div className="grid grid-cols-2 gap-2.5">
                 {hasChats ? (
                   <>
@@ -494,7 +563,7 @@ export function BookStudio() {
               </label>
             </Section>
 
-            <Section title="Imágenes">
+            <Section title="Imágenes" summary={[o.content.chatPhotos && "Fotos del chat", o.content.stockPhotos && "Fotos de banco"].filter(Boolean).join(" · ") || "Solo texto"} suggested={o.content.chatPhotos === sug?.content.chatPhotos && o.content.stockPhotos === sug?.content.stockPhotos}>
               <div className="grid grid-cols-2 gap-2.5">
                 <Check id="i-chat" checked={o.content.chatPhotos} disabled={!hasImages} onChange={(v) => upContent({ chatPhotos: v })} suggested={S(true, sug?.content.chatPhotos)} hint={!hasImages ? "Sube el .zip del chat para tener fotos" : undefined}>
                   Fotos del chat
@@ -509,7 +578,7 @@ export function BookStudio() {
               {hasPhotos ? <StockSearch book={book} busy={busy === "stock"} onSearch={searchStock} /> : null}
             </Section>
 
-            <Section title="Ayuda de la IA" note="(apagada por defecto)">
+            <Section title="Ayuda de la IA" summary={aiOn ? `${aiOn} ${aiOn === 1 ? "activa" : "activas"}` : "Apagada"}>
               {!hasAi ? (
                 <p className="text-sm text-muted">
                   Añade una API key en{" "}
@@ -536,7 +605,7 @@ export function BookStudio() {
               {o.ai.spelling && book.ai.corrections ? <p className="text-xs text-muted">{Object.keys(book.ai.corrections).length} textos corregidos.</p> : null}
             </Section>
 
-            <Section title="Salida">
+            <Section title="Salida" summary={outputsLabel || "Ninguna"} suggested={S(o.outputs, sug?.outputs)}>
               <div className="grid grid-cols-3 gap-2.5">
                 <Check id="o-pdf" checked={o.outputs.pdf} onChange={(v) => up("outputs", { ...o.outputs, pdf: v })} suggested={S(true, sug?.outputs.pdf)}>
                   PDF imprenta
@@ -549,48 +618,105 @@ export function BookStudio() {
                 </Check>
               </div>
             </Section>
-            <div className="pt-4">
-              <Button className="h-9" onClick={() => patch({ resetOptions: true })}>
-                Volver a los valores sugeridos
-              </Button>
-            </div>
-          </>
-        )}
-      </Panel>
-
-      {/* Paso 3 · Vista previa */}
-      <section className="flex min-w-0 flex-col gap-4">
-        <div className="flex items-baseline justify-between">
-          <div>
-            <div className="eyebrow">Paso 3 · Vista previa</div>
-            <h2 className="mt-1 font-display text-lg font-bold">{o?.cover.title || "Tu libro"}</h2>
           </div>
-          {pages ? <span className="font-mono text-xs text-muted">{pages.toLocaleString("es")} págs.</span> : null}
-        </div>
-        <div className="min-h-[520px] flex-1 overflow-hidden rounded-2xl bg-panel">
-          {book?.sources.length ? (
-            <iframe key={version} title="Vista previa del libro" src={`/api/books/${book.id}/preview?limite=40&v=${version}`} className="h-full min-h-[520px] w-full border-0 lg:h-[calc(100vh-260px)]" />
-          ) : (
-            <div className="flex h-full min-h-[520px] items-center justify-center p-10 text-center text-muted">Aquí aparecerán las páginas de tu libro.</div>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="primary" className="min-w-56" disabled={!book?.sources.length} busy={busy === "generate"} onClick={generate}>
-            Generar libro
-          </Button>
-          <span className="text-sm text-muted">
-            {o
-              ? (["pdf", "epub", "png"] as const)
-                  .filter((f) => o.outputs[f])
-                  .map((f) => (f === "png" ? "PNG por página" : f.toUpperCase()))
-                  .join(" · ")
-              : ""}
-          </span>
-        </div>
+        )}
       </section>
-    </main>
+    </>
+  );
+
+  const pageLabel = !shown ? "" : view.cols === 2 && view.page > 1 ? `${view.page}–${Math.min(view.page + 1, shown)}` : String(view.page);
+  const step = (dir: 1 | -1) => {
+    const p = view.page;
+    const next =
+      view.cols === 1 ? p + dir : dir === 1 ? (p === 1 ? 2 : p + 2) : p <= 2 ? 1 : p - 2;
+    control({ goto: Math.max(1, Math.min(shown, next)) });
+  };
+
+  return (
+    <StudioLayout
+      steps={steps}
+      navExtra={
+        <Link href="/galeria" className="text-accent hover:underline">
+          Libros guardados
+        </Link>
+      }
+      aside={aside}
+      footer={footer}
+    >
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="eyebrow">Paso 3 · Vista previa{pages ? ` · ${pages.toLocaleString("es")} págs.` : ""}</div>
+          <h2 className="mt-1 font-display text-xl font-bold">{o?.cover.title || "Tu libro"}</h2>
+        </div>
+        {hasSources ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <div role="group" aria-label="Vista" className="flex gap-0.5 rounded-lg bg-panel p-[3px] text-[13px]">
+              {([1, 2] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-pressed={view.cols === c}
+                  onClick={() => control({ cols: c })}
+                  className={`rounded-md px-3 py-1.5 ${view.cols === c ? "bg-panel-2 text-text" : "text-muted hover:text-text"}`}
+                >
+                  {c === 1 ? "Página" : "Doble página"}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center">
+              <IconBtn label="Página anterior" disabled={view.page <= 1} onClick={() => step(-1)}>
+                <ChevronLeft />
+              </IconBtn>
+              <span
+                className="min-w-20 text-center font-mono text-xs tabular-nums"
+                title={pages && shown && pages > shown ? `La vista previa muestra las primeras ${shown} de ${pages} páginas` : undefined}
+              >
+                {pageLabel} / {shown || "…"}
+              </span>
+              <IconBtn label="Página siguiente" disabled={!shown || (view.cols === 2 && view.page > 1 ? view.page + 1 : view.page) >= shown} onClick={() => step(1)}>
+                <ChevronRight />
+              </IconBtn>
+            </div>
+            <div className="flex items-center">
+              <IconBtn label="Alejar" onClick={() => control({ zoom: Math.max(0.2, view.zoom / 1.25) })}>
+                <Minus />
+              </IconBtn>
+              <button
+                type="button"
+                onClick={() => control({ zoom: 0 })}
+                title="Ajustar a la ventana"
+                className={`h-7 min-w-14 rounded-md px-1.5 font-mono text-xs tabular-nums hover:bg-panel-2 ${view.fit ? "text-muted" : "text-text"}`}
+              >
+                {view.fit ? "Ajustar" : `${Math.round(view.zoom * 100)}%`}
+              </button>
+              <IconBtn label="Acercar" onClick={() => control({ zoom: Math.min(3, view.zoom * 1.25) })}>
+                <Plus />
+              </IconBtn>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div className="min-h-[520px] flex-1 overflow-hidden rounded-2xl bg-panel lg:min-h-0">
+        {hasSources && book ? (
+          <iframe ref={frame} key={version} title="Vista previa del libro" src={`/api/books/${book.id}/preview?limite=40&v=${version}`} className="h-full min-h-[520px] w-full border-0 lg:min-h-0" />
+        ) : (
+          <div className="flex h-full min-h-[520px] items-center justify-center p-10 text-center text-muted">Aquí aparecerán las páginas de tu libro, a doble página.</div>
+        )}
+      </div>
+    </StudioLayout>
   );
 }
+
+function contentSummary(o: BookOptions, hasChats: boolean): string {
+  if (hasChats) {
+    const style = o.content.bubbles ? "Burbujas" : o.content.onePerPage ? "Uno por página" : "Seguidos";
+    const meta = [o.content.showName && "nombre", o.content.showDate && "fecha", o.content.showTime && "hora"].filter(Boolean).join(", ");
+    return meta ? `${style} · ${meta}` : style;
+  }
+  return [o.content.titlePage && "Portadilla", o.content.toc && "Índice", o.content.ornaments && "Ornamentos"].filter(Boolean).join(" · ") || "Solo el texto";
+}
+
+const FONT_SCALE_LABEL: Record<BookOptions["fontScale"], string> = { pequena: "pequeña", normal: "normal", grande: "grande" };
 
 function StockSearch({ book, busy, onSearch }: { book: Book; busy: boolean; onSearch: (q: string) => void }) {
   const [q, setQ] = useState(book.stock.query);

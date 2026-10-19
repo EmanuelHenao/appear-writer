@@ -29,6 +29,7 @@ La galería de propuestas visuales aprobada está en https://claude.ai/artifact/
 - **Portadas de libro:** A (tela verde con marco dorado), C (tipográfica, título enorme), D (círculos superpuestos sobre azul tinta) y E (lino con etiqueta). La portada con foto se descartó.
 - **Interior del libro:** Cormorant es la letra sugerida, pero el usuario elige entre Cormorant, Caslon, Lora y Fraunces. Nombre, fecha y hora de cada mensaje son casillas separadas (por defecto: nombre y fecha).
 - **Interfaz:** "estudio oscuro creativo"; acento lila `#b6a6ff`, ámbar `#ffc56b` para lo sugerido. Tokens en `src/app/globals.css`.
+- **Layout de los estudios (v4):** dos columnas (`src/components/StudioLayout.tsx`). A la izquierda, los pasos con scroll propio y la acción principal fija al pie; a la derecha, la vista previa, que nunca se mueve. Las secciones de opciones son plegables y muestran lo elegido en su título (`Section` con `summary`). En Imágenes el ajuste fino es el paso 3 de la columna izquierda; en Libros la vista previa es a doble página por defecto. Iconos de línea en `src/components/icons.tsx`, sin emojis en la interfaz.
 
 ## Comandos
 
@@ -56,7 +57,7 @@ docker compose up -d --build
 - `src/lib/render/`: Chromium compartido (Playwright). Los documentos se sirven desde un origen virtual (`http://appear.local/`) con fuentes y archivos locales. `image.ts` renderiza las mismas plantillas con `react-dom/server`.
 - `src/lib/ai/`: `detect.ts` detecta el proveedor por la key; `client.ts` usa el SDK oficial de Anthropic (salida estructurada) y HTTP directo para OpenAI/compatibles y Gemini; `tasks.ts` contiene los prompts.
 - `src/import/`: importadores (WhatsApp, texto, docx con mammoth, pdf con unpdf) hacia el modelo `Block` de `src/book/model.ts`.
-- `src/book/`: opciones y paletas del libro, `structure.ts` (capítulos deterministas), `covers.ts`, `html.ts` + `paginate.js.ts` (documento único para vista previa, PDF y PNG; el paginador corre en el navegador), `epub.ts`, `service.ts`.
+- `src/book/`: opciones y paletas del libro, `structure.ts` (capítulos deterministas), `covers.ts`, `html.ts` + `paginate.js.ts` (documento único para vista previa, PDF y PNG; el paginador corre en el navegador y, en la vista previa, atiende `postMessage` `book-control` para página/doble página, zoom y navegación, y responde con `book-view`), `epub.ts`, `service.ts`.
 - Persistencia en archivos bajo `DATA_DIR` (por defecto `./data`): `settings.json`, `templates.json`, `gallery/<id>/`, `books/<id>/book.json` + `media/`. No hay base de datos.
 - Acceso con contraseña única (`APP_PASSWORD`, Basic Auth en `src/proxy.ts`).
 

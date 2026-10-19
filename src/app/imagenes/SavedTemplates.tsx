@@ -65,13 +65,17 @@ export function SavedTemplatesSection({
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   return (
-    <Section title="Mis plantillas" note={list.length ? "(las marcadas entran primero en las propuestas)" : undefined}>
+    <Section
+      title="Mis plantillas"
+      summary={list.length ? `${list.length} ${list.length === 1 ? "guardada" : "guardadas"} · ${used.length} en uso` : "Ninguna todavía"}
+    >
       {!list.length ? (
         <p className="text-sm leading-relaxed text-muted">
-          Marca con ☆ cualquier propuesta para guardarla como plantilla. Luego podrás usarla con otros textos.
+          Pulsa «Guardar plantilla» sobre la vista previa para guardar la propuesta elegida. Luego podrás usarla con otros textos.
         </p>
       ) : (
         <>
+          <p className="text-xs text-muted">Las marcadas entran primero en las propuestas.</p>
           <div className="flex gap-3 text-xs">
             <button type="button" className="text-accent hover:underline" onClick={() => setUsed(list.map((t) => t.id))}>
               Marcar todas

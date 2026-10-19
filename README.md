@@ -86,3 +86,4 @@ Para validar también el EPUB con epubcheck, indica la ruta del jar: `EPUBCHECK_
 - [x] Extras: marca personal, generación en lote, galería, fotos reales
 - [x] v2: chat con burbujas y cuatro plantillas nuevas (Titular, Franja, Marco, Cuaderno)
 - [x] v3: patrones generativos, diseño aleatorio y plantillas propias
+- [x] v4: estudio en dos columnas con la vista previa siempre visible, opciones plegables y visor de libro a doble página

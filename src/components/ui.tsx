@@ -1,6 +1,7 @@
 "use client";
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { ChevronDown } from "./icons";
 
 export function SuggestDot({ kind = "sistema" }: { kind?: "sistema" | "ia" }) {
   return kind === "ia" ? (
@@ -14,7 +15,43 @@ export function SuggestDot({ kind = "sistema" }: { kind?: "sistema" | "ia" }) {
   );
 }
 
-export function Section({ title, note, children }: { title: string; note?: ReactNode; children: ReactNode }) {
+/**
+ * Grupo de opciones. Con `summary` se pliega: el título muestra a la derecha
+ * lo elegido, así el panel entero se lee sin abrir nada.
+ */
+export function Section({
+  title,
+  note,
+  summary,
+  suggested,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  note?: ReactNode;
+  summary?: ReactNode;
+  /** El valor actual es el sugerido: lleva el punto ámbar en el resumen. */
+  suggested?: boolean | "ia";
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  if (summary !== undefined) {
+    return (
+      <details open={defaultOpen || undefined} className="group border-t border-line first:border-t-0">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-md py-3.5 font-semibold hover:text-white [&::-webkit-details-marker]:hidden">
+          <span className="flex-none">
+            {title} {note ? <span className="font-normal text-muted">{note}</span> : null}
+          </span>
+          <span className="flex min-w-0 items-center gap-2 text-sm font-normal text-muted">
+            {suggested ? <SuggestDot kind={suggested === "ia" ? "ia" : "sistema"} /> : null}
+            <span className="truncate">{summary}</span>
+            <ChevronDown className="flex-none transition-transform group-open:rotate-180" />
+          </span>
+        </summary>
+        <div className="flex flex-col gap-2.5 pb-4">{children}</div>
+      </details>
+    );
+  }
   return (
     <fieldset className="flex flex-col gap-2.5 border-b border-line py-4 last:border-b-0">
       <legend className="float-left mb-2.5 w-full font-semibold">
@@ -113,21 +150,6 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "error" | 
     <p role={tone === "error" ? "alert" : "status"} className={`rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed ${color}`}>
       {children}
     </p>
-  );
-}
-
-export function Panel({ eyebrow, title, aside, children, className = "" }: { eyebrow: string; title: string; aside?: ReactNode; children: ReactNode; className?: string }) {
-  return (
-    <section className={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-panel ${className}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
-        <div>
-          <div className="eyebrow">{eyebrow}</div>
-          <h2 className="mt-1 font-display text-lg font-bold">{title}</h2>
-        </div>
-        {aside}
-      </div>
-      <div className="scroll-thin flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-5">{children}</div>
-    </section>
   );
 }
 

@@ -135,20 +135,59 @@ export const PAGINATE_JS = String.raw`
       note.textContent = "Vista previa de las primeras " + limit + " páginas de " + total + ". El archivo final incluye todas.";
       book.appendChild(note);
     }
-    // En la vista previa se escala para ver páginas enfrentadas.
+    // Visor de la vista previa: una página o doble página (por defecto),
+    // zoom («ajustar» encaja la página o el pliego entero en la ventana)
+    // y navegación. La página padre lo controla con postMessage.
     if (limit && window.matchMedia("screen").matches) {
+      var view = { cols: 2, zoom: 0 };
+      var shown = Array.prototype.slice.call(book.querySelectorAll(".page"));
+      var current = 1;
+      var z = 1;
+      var report = function () {
+        try { parent.postMessage({ type: "book-view", page: current, shown: shown.length, cols: view.cols, zoom: z }, "*"); } catch (e) {}
+      };
       var fit = function () {
-        var first = book.querySelector(".page");
+        var first = shown[0];
         if (!first) return;
-        var pw = first.offsetWidth;
-        var avail = window.innerWidth - 32;
-        var cols = avail >= pw * 2 * 0.42 ? 2 : 1;
+        book.style.zoom = "1";
+        var pw = first.offsetWidth, ph = first.offsetHeight;
+        var cols = view.cols;
         book.style.gridTemplateColumns = "repeat(" + cols + ", var(--pw))";
         first.style.gridColumn = cols === 2 ? "2" : "auto";
-        book.style.zoom = String(Math.min(1, avail / (pw * cols)));
+        var fitZ = Math.min((window.innerWidth - 32) / (pw * cols), (window.innerHeight - 32) / ph);
+        z = view.zoom || Math.min(fitZ, 2);
+        book.style.zoom = String(z);
+        report();
       };
+      var goTo = function (n) {
+        var p = shown[Math.max(0, Math.min(shown.length - 1, n - 1))];
+        if (p) p.scrollIntoView({ block: view.zoom ? "start" : "center" });
+      };
+      // Primera página visible (en doble página, la del pliego que se ve).
+      var onScroll = function () {
+        var mid = window.innerHeight * 0.4;
+        for (var i = 0; i < shown.length; i++) {
+          var r = shown[i].getBoundingClientRect();
+          if (r.bottom > mid) {
+            var n = i + 1;
+            if (view.cols === 2 && n > 1 && n % 2 === 1) n -= 1;
+            if (n !== current) { current = n; report(); }
+            return;
+          }
+        }
+      };
+      window.addEventListener("message", function (e) {
+        var d = e.data || {};
+        if (d.type !== "book-control") return;
+        var keep = current;
+        if (d.cols) view.cols = d.cols === 1 ? 1 : 2;
+        if ("zoom" in d) view.zoom = d.zoom || 0;
+        if (d.cols || "zoom" in d) { fit(); goTo(keep); }
+        if (d.goto) { current = d.goto; goTo(d.goto); report(); }
+      });
       fit();
       window.addEventListener("resize", fit);
+      window.addEventListener("scroll", onScroll, { passive: true });
     }
     window.__BOOK_READY__ = { pages: total, chapters: chapterPages };
     document.body.dataset.ready = "1";

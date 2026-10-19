@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { SlidePreview } from "@/components/SlidePreview";
-import { Button, Check, Choice, downloadFrom, Notice, Panel, postJson, Section, SuggestDot, TextInput } from "@/components/ui";
+import { Dice, Download, Star, Undo } from "@/components/icons";
+import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
+import { Button, Check, Choice, downloadFrom, Notice, postJson, Section, SuggestDot, TextInput } from "@/components/ui";
 import { useSettings } from "@/components/useSettings";
-import { useWidth } from "@/components/useWidth";
+import { useMedia, useSize } from "@/components/useWidth";
 import {
   buildProposals,
   composeSlides,
@@ -77,8 +79,8 @@ export function ImageStudio() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "error" | "info"; text: string } | null>(null);
   const [batchText, setBatchText] = useState("");
-  const [previewRef, previewWidth] = useWidth<HTMLDivElement>(420);
-  const [thumbsRef, thumbsWidth] = useWidth<HTMLDivElement>(640);
+  const [stageRef, stage] = useSize<HTMLDivElement>();
+  const wide = useMedia("(min-width: 1024px)");
 
   const hasAi = !!settings?.ai.resolved;
   const aiImages = !!settings?.ai.resolved?.images;
@@ -309,13 +311,83 @@ export function ImageStudio() {
 
   const iaMark = (cond: boolean) => (opts.ai.suggest && brief && !briefStale && cond ? ("ia" as const) : undefined);
 
-  return (
-    <main className="mx-auto grid w-full max-w-[1600px] flex-1 gap-6 px-4 py-7 sm:px-8 lg:grid-cols-[340px_420px_minmax(0,1fr)]">
+  function resetOptions() {
+    setOpts(suggestedImageOptions(reading, { handle: brandHandle }));
+    setFormatTouched(false);
+    setPatternsTouched(false);
+    setEmphasisText(null);
+  }
+
+  // ← y → cambian de propuesta (si no se está escribiendo).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!designs || mode !== "una" || e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      pick((selected + (e.key === "ArrowRight" ? 1 : designs.length - 1)) % designs.length);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  // Encaje de la vista previa y de las miniaturas en el hueco de la derecha.
+  const aspect = editSlides[0] ? editSlides[0].width / editSlides[0].height : 0.8;
+  const multi = editSlides.length > 1;
+  let thumbW: number;
+  let previewW: number;
+  if (wide) {
+    thumbW = clamp(Math.floor(((stage.height - 4 * 26 - 3 * 10) / 4) * aspect), 44, 104);
+    const availW = stage.width - thumbW - 32;
+    const availH = stage.height - 30;
+    previewW = Math.floor(Math.min(multi ? availW * 0.82 : availW, availH * aspect));
+  } else {
+    thumbW = clamp(Math.floor((stage.width - 30) / 4) - 6, 44, 104);
+    previewW = Math.floor(Math.min(stage.width * (multi ? 0.85 : 1), 520));
+  }
+  previewW = Math.max(previewW, 160);
+
+  const fmt = FORMATS.find((f) => f.id === effective.format) ?? FORMATS[0];
+  const familySummary = opts.families.length === FAMILIES.length ? "Los 4" : FAMILIES.filter((f) => opts.families.includes(f.id)).map((f) => f.label).join(" · ");
+  const brandSummary = [opts.brand.handle && "Firma", opts.brand.logo && "Logo", opts.brand.palette && "Paleta", opts.brand.font && "Fuente"].filter(Boolean).join(" · ") || "Ninguna";
+  const extrasSummary = [opts.extras.gallery && "Galería", opts.extras.caption && "Texto", opts.extras.hashtags && "Hashtags"].filter(Boolean).join(" · ") || "Ninguno";
+  const selectedSaved = designs && edit ? !!savedMatch(designs[selected]) : false;
+
+  const steps: Step[] =
+    mode === "lote"
+      ? [
+          { id: "paso-1", label: "Textos", done: batchTexts.length > 0, current: !batchTexts.length },
+          { id: "paso-2", label: "Opciones", current: batchTexts.length > 0 },
+        ]
+      : [
+          { id: "paso-1", label: "Texto", done: !!reading.text, current: !reading.text },
+          { id: "paso-2", label: "Opciones", done: !!designs, current: !!reading.text && !edit },
+          ...(edit ? [{ id: "paso-3", label: "Ajuste fino", current: true }] : []),
+        ];
+
+  const footer =
+    mode === "lote" ? (
+      <Button variant="primary" className="w-full" onClick={runBatch} busy={busy === "batch"} disabled={!batchTexts.length}>
+        Generar {batchTexts.length || ""} imágenes (ZIP)
+      </Button>
+    ) : (
+      <div className="flex gap-2">
+        <Button variant="primary" className="flex-1" onClick={() => createProposals(designs ? seed + 1 : 0)} disabled={!reading.text}>
+          {designs ? "Crear otras 4 propuestas" : "Crear 4 propuestas"}
+        </Button>
+        <Button onClick={randomProposals} disabled={!reading.text} title="Cuatro diseños al azar con lo marcado en el panel">
+          <Dice />4 al azar
+        </Button>
+      </div>
+    );
+
+  const aside = (
+    <>
       {/* Paso 1 · Texto */}
-      <section className="flex min-w-0 flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div className="eyebrow">Paso 1 · Tu texto</div>
-          <div className="flex gap-1 rounded-lg bg-panel p-1 text-sm" role="tablist" aria-label="Modo">
+      <section id="paso-1" className="flex scroll-mt-4 flex-col gap-3">
+        <StepHead label={mode === "una" ? "Paso 1 · Tu texto" : "Paso 1 · Tus textos"}>
+          <div className="flex gap-0.5 rounded-lg bg-ink p-[3px] text-[13px]" role="tablist" aria-label="Modo">
             {(["una", "lote"] as const).map((m) => (
               <button
                 key={m}
@@ -328,434 +400,459 @@ export function ImageStudio() {
               </button>
             ))}
           </div>
-        </div>
+        </StepHead>
         {mode === "una" ? (
           <>
-            <label htmlFor="frase" className="font-display text-[28px] font-bold leading-[1.1] tracking-tight">
+            <label htmlFor="frase" className="font-display text-2xl font-bold leading-[1.1] tracking-tight">
               ¿Qué quieres decir hoy?
             </label>
             <textarea
               id="frase"
-              rows={6}
+              rows={4}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              className="resize-y rounded-xl border border-line bg-panel p-4 text-lg leading-relaxed focus:border-accent"
+              className="resize-y rounded-xl border border-line bg-ink p-3.5 text-base leading-relaxed focus:border-accent"
               placeholder="Escribe o pega tu frase"
             />
-            <div className="flex flex-col gap-2.5 rounded-xl border border-line bg-panel p-4">
-              <div className="eyebrow">Lectura del texto</div>
-              <Row k="Caracteres" v={<span className="font-mono tabular-nums">{reading.chars}</span>} />
-              <Row k="Palabras" v={<span className="font-mono tabular-nums">{reading.words}</span>} />
-              <Row k="Longitud" v={LENGTH_LABEL[reading.lengthClass]} />
-              <Row
-                k="Formato sugerido"
-                v={
-                  <span className="text-suggest">
-                    {suggested.format === "carrusel" ? `Carrusel · ${reading.slides.length} imágenes` : `${suggested.format} · 1 imagen`}
-                  </span>
-                }
-              />
+            <div className="flex flex-wrap gap-1.5" aria-label="Lectura del texto">
+              <Chip>
+                <span className="font-mono tabular-nums">{reading.chars}</span> caracteres
+              </Chip>
+              <Chip>
+                <span className="font-mono tabular-nums">{reading.words}</span> palabras
+              </Chip>
+              <Chip>{LENGTH_LABEL[reading.lengthClass]}</Chip>
+              <Chip
+                suggest
+                title={`Hasta ${LIMITS.corta} caracteres sugiere letra gigante en 4:5. Hasta ${LIMITS.media}, 4:5 o 1:1 con letra media. Más de ${LIMITS.media}, carrusel de hasta ${LIMITS.porDiapositiva} caracteres por imagen.`}
+              >
+                ● {suggested.format === "carrusel" ? `Carrusel · ${reading.slides.length} imágenes` : `${suggested.format} · 1 imagen`}
+              </Chip>
             </div>
-            <p className="text-sm leading-relaxed text-muted">
-              Hasta {LIMITS.corta} caracteres sugiere letra gigante en 4:5. Hasta {LIMITS.media}, 4:5 o 1:1 con letra media. Más de {LIMITS.media}, carrusel de hasta {LIMITS.porDiapositiva} caracteres por imagen.
-            </p>
           </>
         ) : (
           <>
-            <label htmlFor="lote" className="font-display text-[28px] font-bold leading-[1.1] tracking-tight">
+            <label htmlFor="lote" className="font-display text-2xl font-bold leading-[1.1] tracking-tight">
               El contenido del mes, de una vez
             </label>
             <textarea
               id="lote"
-              rows={14}
+              rows={10}
               value={batchText}
               onChange={(e) => setBatchText(e.target.value)}
-              className="resize-y rounded-xl border border-line bg-panel p-4 leading-relaxed focus:border-accent"
+              className="resize-y rounded-xl border border-line bg-ink p-3.5 leading-relaxed focus:border-accent"
               placeholder={"Primera frase.\n\nSegunda frase.\n\nTercera frase."}
             />
             <p className="text-sm leading-relaxed text-muted">
               Separa cada frase con una línea en blanco. Se alternan los estilos marcados y{" "}
               {formatTouched ? "todas usan el formato elegido" : "cada frase usa el formato que sugiere su longitud"}.
             </p>
-            <Button variant="primary" onClick={runBatch} busy={busy === "batch"} disabled={!batchTexts.length}>
-              Generar {batchTexts.length || ""} imágenes (ZIP)
-            </Button>
-            {message && mode === "lote" ? <Notice tone={message.tone}>{message.text}</Notice> : null}
           </>
         )}
       </section>
 
       {/* Paso 2 · Opciones */}
-      <Panel
-        eyebrow="Paso 2 · Opciones"
-        title="Revisa y cambia lo que quieras"
-        aside={
-          <span className="whitespace-nowrap rounded-full border border-suggest-line px-2.5 py-1 text-xs text-suggest">
-            ● sugerido
+      <section id="paso-2" className="flex scroll-mt-4 flex-col">
+        <StepHead label="Paso 2 · Opciones">
+          <span className="flex items-center gap-3">
+            <button type="button" onClick={resetOptions} className="text-xs text-accent hover:underline">
+              Volver a lo sugerido
+            </button>
+            <span className="whitespace-nowrap rounded-full border border-suggest-line px-2 py-0.5 text-[11px] text-suggest">● sugerido</span>
           </span>
-        }
-        className="lg:max-h-[calc(100vh-120px)]"
-      >
-        <Section title="Formato">
-          <div className="grid grid-cols-2 gap-2">
-            {FORMATS.map((f) => (
-              <Choice
-                key={f.id}
-                name="formato"
-                value={f.id}
-                checked={effective.format === f.id}
-                suggested={suggested.format === f.id}
-                onSelect={(v) => {
-                  setFormatTouched(true);
-                  set("format", v as FormatId);
-                }}
-              >
-                <span className="font-semibold">{f.label}</span> <span className="text-xs text-muted">{f.hint}</span>
-              </Choice>
-            ))}
-          </div>
-          {effective.format === "carrusel" ? (
-            <div className="flex flex-wrap gap-4 text-sm">
-              <span className="text-muted">Cada imagen:</span>
-              {(["4:5", "1:1"] as const).map((a) => (
-                <label key={a} className="flex items-center gap-2">
-                  <input type="radio" name="carrusel-aspecto" checked={effective.carouselAspect === a} onChange={() => set("carouselAspect", a)} />
-                  {a} {a === "4:5" ? <SuggestDot /> : null}
-                </label>
+        </StepHead>
+        <div className="mt-2">
+          <Section title="Formato" defaultOpen summary={`${fmt.label} ${fmt.hint}`} suggested={effective.format === suggested.format}>
+            <div className="grid grid-cols-2 gap-2">
+              {FORMATS.map((f) => (
+                <Choice
+                  key={f.id}
+                  name="formato"
+                  value={f.id}
+                  checked={effective.format === f.id}
+                  suggested={suggested.format === f.id}
+                  onSelect={(v) => {
+                    setFormatTouched(true);
+                    set("format", v as FormatId);
+                  }}
+                >
+                  <span className="font-semibold">{f.label}</span> <span className="text-xs text-muted">{f.hint}</span>
+                </Choice>
               ))}
             </div>
-          ) : null}
-          {effective.format !== "carrusel" && (reading.lengthClass === "larga" || reading.lengthClass === "muy-larga") ? (
-            <Notice>El texto es largo y la letra saldrá pequeña. El carrusel lo reparte en {reading.slides.length} imágenes.</Notice>
-          ) : null}
-          <Check id="hires" checked={effective.hiRes} onChange={(v) => set("hiRes", v)} suggested>
-            Exportar en doble resolución <span className="text-muted">(2160 px de ancho)</span>
-          </Check>
-        </Section>
-
-        <Section title="Estilos a proponer">
-          <div className="grid grid-cols-2 gap-2.5">
-            {FAMILIES.map((f) => {
-              const on = opts.families.includes(f.id);
-              return (
-                <Check
-                  key={f.id}
-                  id={`fam-${f.id}`}
-                  checked={on}
-                  disabled={on && opts.families.length === 1}
-                  suggested={iaMark(!!brief?.familias.includes(f.id)) ?? true}
-                  hint={f.hint}
-                  onChange={(v) => set("families", v ? [...opts.families, f.id] : opts.families.filter((x) => x !== f.id))}
-                >
-                  {f.label}
-                </Check>
-              );
-            })}
-          </div>
-        </Section>
-
-        <Section title="Tipografía">
-          <div className="flex flex-wrap gap-2">
-            <FontChip active={opts.font === "auto"} onClick={() => set("font", "auto")} suggested>
-              Que decida cada estilo
-            </FontChip>
-            {IMAGE_FONT_CHOICES.map((id) => (
-              <FontChip key={id} active={opts.font === id} onClick={() => set("font", id)} font={id} suggested={iaMark(brief?.fuente === id)}>
-                {FONTS[id].label}
-              </FontChip>
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Paleta">
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => set("palette", "auto")}
-              aria-pressed={opts.palette === "auto"}
-              className={`col-span-3 flex items-center justify-between rounded-[10px] border px-3 py-2 text-left text-sm ${opts.palette === "auto" ? "border-accent bg-accent-soft" : "border-line"}`}
-            >
-              Que decida cada estilo <SuggestDot />
-            </button>
-            {PALETTES.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => set("palette", p.id)}
-                aria-pressed={opts.palette === p.id}
-                className={`flex flex-col gap-1.5 rounded-[10px] border p-2 text-left ${opts.palette === p.id ? "border-accent bg-accent-soft" : "border-line hover:border-line-strong"}`}
-              >
-                <span className="flex h-5 overflow-hidden rounded">
-                  {[p.bg, p.fg, p.accent, p.accent2].map((c, i) => (
-                    <span key={i} className="flex-1" style={{ background: c }} />
-                  ))}
-                </span>
-                <span className="flex items-center justify-between text-xs">
-                  {p.label} {iaMark(brief?.paleta === p.id) ? <SuggestDot kind="ia" /> : null}
-                </span>
-              </button>
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Fondo" note="(las propuestas alternan los marcados)">
-          <div className="grid grid-cols-2 gap-2.5">
-            {BACKGROUNDS.map((b) => {
-              const on = opts.backgrounds.includes(b.id);
-              const unavailable = (b.id === "foto" && !hasPhotos) || (b.id === "ia" && !aiImages);
-              return (
-                <Check
-                  key={b.id}
-                  id={`bg-${b.id}`}
-                  checked={on}
-                  disabled={(on && opts.backgrounds.length === 1) || (!on && unavailable)}
-                  suggested={suggested.backgrounds.includes(b.id)}
-                  hint={
-                    b.id === "foto" && !hasPhotos
-                      ? "Necesita una key de Unsplash o Pexels"
-                      : b.id === "ia" && !aiImages
-                        ? "Necesita una key de OpenAI"
-                        : undefined
-                  }
-                  onChange={(v) => set("backgrounds", v ? [...opts.backgrounds, b.id] : opts.backgrounds.filter((x) => x !== b.id))}
-                >
-                  {b.label}
-                </Check>
-              );
-            })}
-          </div>
-        </Section>
-
-        <PatternPanel
-          value={effective.patterns}
-          suggested={suggested.patterns}
-          active={opts.backgrounds.includes("patron")}
-          onChange={(v) => {
-            setPatternsTouched(true);
-            set("patterns", v);
-          }}
-        />
-
-        <SavedTemplatesSection
-          list={saved.list}
-          used={usedSaved}
-          setUsed={setUsedSaved}
-          preview={(t) =>
-            composeSlides({ text: reading.text || " ", options: effective, design: t.design, sizeScale: t.sizeScale, emphasis, photo, brand })[0]
-          }
-          onRemove={(id) => {
-            void saved.remove(id);
-            setUsedSaved((u) => u.filter((x) => x !== id));
-          }}
-          onRename={(id, name) => void saved.rename(id, name)}
-          onUse={() => {
-            if (mode === "lote") setMode("una");
-            createProposals(0);
-          }}
-        />
-
-        <Section title="Marca personal">
-          <div className="grid grid-cols-2 gap-2.5">
-            <Check id="m-handle" checked={opts.brand.handle} disabled={!brandHandle} onChange={(v) => set("brand", { ...opts.brand, handle: v })} suggested={!!brandHandle} hint={brandHandle || "Sin configurar"}>
-              Firma
-            </Check>
-            <Check id="m-logo" checked={opts.brand.logo} disabled={!brandLogo} onChange={(v) => set("brand", { ...opts.brand, logo: v })} hint={brandLogo ? "Subido" : "Sin configurar"}>
-              Logo
-            </Check>
-            <Check id="m-pal" checked={opts.brand.palette} onChange={(v) => set("brand", { ...opts.brand, palette: v })}>
-              Paleta de marca
-            </Check>
-            <Check id="m-font" checked={opts.brand.font} onChange={(v) => set("brand", { ...opts.brand, font: v })}>
-              Fuente de marca
-            </Check>
-          </div>
-          <Link href="/ajustes#marca" className="text-sm text-accent hover:underline">
-            Configurar la marca
-          </Link>
-        </Section>
-
-        <Section title="Extras">
-          <div className="grid grid-cols-2 gap-2.5">
-            <Check id="x-gal" checked={opts.extras.gallery} onChange={(v) => set("extras", { ...opts.extras, gallery: v })} suggested>
-              Guardar en galería
-            </Check>
-            <Check id="x-cap" checked={opts.extras.caption} disabled={!hasAi} onChange={(v) => set("extras", { ...opts.extras, caption: v })} hint={!hasAi ? "Necesita IA" : undefined}>
-              Texto de publicación
-            </Check>
-            <Check id="x-tag" checked={opts.extras.hashtags} disabled={!hasAi} onChange={(v) => set("extras", { ...opts.extras, hashtags: v })} hint={!hasAi ? "Necesita IA" : undefined}>
-              Hashtags
-            </Check>
-          </div>
-        </Section>
-
-        <Section title="Ayuda de la IA" note="(apagada por defecto)">
-          <Check
-            id="ia-sug"
-            checked={opts.ai.suggest}
-            disabled={!hasAi || briefBusy}
-            onChange={(v) => {
-              set("ai", { suggest: v });
-              if (v) void askBrief();
-            }}
-            hint={hasAi ? "La propuesta llega marcada con «IA» en este panel y puedes cambiarla." : "Añade una API key en Ajustes para usarla."}
-          >
-            Sugerir estilo según el tono del texto
-          </Check>
-          {briefBusy ? <Notice>Leyendo el tono del texto…</Notice> : null}
-          {opts.ai.suggest && brief ? (
-            <div className="rounded-xl border border-line bg-panel-2 p-3 text-sm leading-relaxed">
-              <div>
-                <span className="text-muted">Tono:</span> {brief.tono}
+            {effective.format === "carrusel" ? (
+              <div className="flex flex-wrap gap-4 text-sm">
+                <span className="text-muted">Cada imagen:</span>
+                {(["4:5", "1:1"] as const).map((a) => (
+                  <label key={a} className="flex items-center gap-2">
+                    <input type="radio" name="carrusel-aspecto" checked={effective.carouselAspect === a} onChange={() => set("carouselAspect", a)} />
+                    {a} {a === "4:5" ? <SuggestDot /> : null}
+                  </label>
+                ))}
               </div>
-              <div className="text-muted">{brief.razon}</div>
-              {briefStale ? (
-                <Button className="mt-2 h-9" onClick={askBrief} busy={briefBusy}>
-                  El texto cambió: pedir otra sugerencia
+            ) : null}
+            {effective.format !== "carrusel" && (reading.lengthClass === "larga" || reading.lengthClass === "muy-larga") ? (
+              <Notice>El texto es largo y la letra saldrá pequeña. El carrusel lo reparte en {reading.slides.length} imágenes.</Notice>
+            ) : null}
+            <Check id="hires" checked={effective.hiRes} onChange={(v) => set("hiRes", v)} suggested>
+              Exportar en doble resolución <span className="text-muted">(2160 px de ancho)</span>
+            </Check>
+          </Section>
+
+          <Section title="Estilos" summary={familySummary} suggested={sameSet(opts.families, suggested.families)}>
+            <div className="grid grid-cols-2 gap-2.5">
+              {FAMILIES.map((f) => {
+                const on = opts.families.includes(f.id);
+                return (
+                  <Check
+                    key={f.id}
+                    id={`fam-${f.id}`}
+                    checked={on}
+                    disabled={on && opts.families.length === 1}
+                    suggested={iaMark(!!brief?.familias.includes(f.id)) ?? true}
+                    hint={f.hint}
+                    onChange={(v) => set("families", v ? [...opts.families, f.id] : opts.families.filter((x) => x !== f.id))}
+                  >
+                    {f.label}
+                  </Check>
+                );
+              })}
+            </div>
+          </Section>
+
+          <Section
+            title="Tipografía"
+            summary={opts.font === "auto" ? "Que decida cada estilo" : (FONTS[opts.font as FontId]?.label ?? opts.font)}
+            suggested={opts.font === "auto" || iaMark(brief?.fuente === opts.font)}
+          >
+            <div className="flex flex-wrap gap-2">
+              <FontChip active={opts.font === "auto"} onClick={() => set("font", "auto")} suggested>
+                Que decida cada estilo
+              </FontChip>
+              {IMAGE_FONT_CHOICES.map((id) => (
+                <FontChip key={id} active={opts.font === id} onClick={() => set("font", id)} font={id} suggested={iaMark(brief?.fuente === id)}>
+                  {FONTS[id].label}
+                </FontChip>
+              ))}
+            </div>
+          </Section>
+
+          <Section
+            title="Paleta"
+            summary={opts.palette === "auto" ? "Que decida cada estilo" : getPalette(opts.palette).label}
+            suggested={opts.palette === "auto" || iaMark(brief?.paleta === opts.palette)}
+          >
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => set("palette", "auto")}
+                aria-pressed={opts.palette === "auto"}
+                className={`col-span-3 flex items-center justify-between rounded-[10px] border px-3 py-2 text-left text-sm ${opts.palette === "auto" ? "border-accent bg-accent-soft" : "border-line"}`}
+              >
+                Que decida cada estilo <SuggestDot />
+              </button>
+              {PALETTES.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => set("palette", p.id)}
+                  aria-pressed={opts.palette === p.id}
+                  className={`flex flex-col gap-1.5 rounded-[10px] border p-2 text-left ${opts.palette === p.id ? "border-accent bg-accent-soft" : "border-line hover:border-line-strong"}`}
+                >
+                  <span className="flex h-5 overflow-hidden rounded">
+                    {[p.bg, p.fg, p.accent, p.accent2].map((c, i) => (
+                      <span key={i} className="flex-1" style={{ background: c }} />
+                    ))}
+                  </span>
+                  <span className="flex items-center justify-between text-xs">
+                    {p.label} {iaMark(brief?.paleta === p.id) ? <SuggestDot kind="ia" /> : null}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          <Section
+            title="Fondo"
+            summary={BACKGROUNDS.filter((b) => opts.backgrounds.includes(b.id)).map((b) => b.label.replace(" generativo", "")).join(" · ")}
+            suggested={sameSet(opts.backgrounds, suggested.backgrounds)}
+          >
+            <p className="text-xs text-muted">Las propuestas alternan los fondos marcados.</p>
+            <div className="grid grid-cols-2 gap-2.5">
+              {BACKGROUNDS.map((b) => {
+                const on = opts.backgrounds.includes(b.id);
+                const unavailable = (b.id === "foto" && !hasPhotos) || (b.id === "ia" && !aiImages);
+                return (
+                  <Check
+                    key={b.id}
+                    id={`bg-${b.id}`}
+                    checked={on}
+                    disabled={(on && opts.backgrounds.length === 1) || (!on && unavailable)}
+                    suggested={suggested.backgrounds.includes(b.id)}
+                    hint={
+                      b.id === "foto" && !hasPhotos
+                        ? "Necesita una key de Unsplash o Pexels"
+                        : b.id === "ia" && !aiImages
+                          ? "Necesita una key de OpenAI"
+                          : undefined
+                    }
+                    onChange={(v) => set("backgrounds", v ? [...opts.backgrounds, b.id] : opts.backgrounds.filter((x) => x !== b.id))}
+                  >
+                    {b.label}
+                  </Check>
+                );
+              })}
+            </div>
+          </Section>
+
+          <PatternPanel
+            value={effective.patterns}
+            suggested={suggested.patterns}
+            active={opts.backgrounds.includes("patron")}
+            onChange={(v) => {
+              setPatternsTouched(true);
+              set("patterns", v);
+            }}
+          />
+
+          <SavedTemplatesSection
+            list={saved.list}
+            used={usedSaved}
+            setUsed={setUsedSaved}
+            preview={(t) =>
+              composeSlides({ text: reading.text || " ", options: effective, design: t.design, sizeScale: t.sizeScale, emphasis, photo, brand })[0]
+            }
+            onRemove={(id) => {
+              void saved.remove(id);
+              setUsedSaved((u) => u.filter((x) => x !== id));
+            }}
+            onRename={(id, name) => void saved.rename(id, name)}
+            onUse={() => {
+              if (mode === "lote") setMode("una");
+              createProposals(0);
+            }}
+          />
+
+          <Section title="Marca personal" summary={brandSummary} suggested={JSON.stringify(opts.brand) === JSON.stringify(suggested.brand)}>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Check id="m-handle" checked={opts.brand.handle} disabled={!brandHandle} onChange={(v) => set("brand", { ...opts.brand, handle: v })} suggested={!!brandHandle} hint={brandHandle || "Sin configurar"}>
+                Firma
+              </Check>
+              <Check id="m-logo" checked={opts.brand.logo} disabled={!brandLogo} onChange={(v) => set("brand", { ...opts.brand, logo: v })} hint={brandLogo ? "Subido" : "Sin configurar"}>
+                Logo
+              </Check>
+              <Check id="m-pal" checked={opts.brand.palette} onChange={(v) => set("brand", { ...opts.brand, palette: v })}>
+                Paleta de marca
+              </Check>
+              <Check id="m-font" checked={opts.brand.font} onChange={(v) => set("brand", { ...opts.brand, font: v })}>
+                Fuente de marca
+              </Check>
+            </div>
+            <Link href="/ajustes#marca" className="text-sm text-accent hover:underline">
+              Configurar la marca
+            </Link>
+          </Section>
+
+          <Section title="Extras" summary={extrasSummary} suggested={JSON.stringify(opts.extras) === JSON.stringify(suggested.extras)}>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Check id="x-gal" checked={opts.extras.gallery} onChange={(v) => set("extras", { ...opts.extras, gallery: v })} suggested>
+                Guardar en galería
+              </Check>
+              <Check id="x-cap" checked={opts.extras.caption} disabled={!hasAi} onChange={(v) => set("extras", { ...opts.extras, caption: v })} hint={!hasAi ? "Necesita IA" : undefined}>
+                Texto de publicación
+              </Check>
+              <Check id="x-tag" checked={opts.extras.hashtags} disabled={!hasAi} onChange={(v) => set("extras", { ...opts.extras, hashtags: v })} hint={!hasAi ? "Necesita IA" : undefined}>
+                Hashtags
+              </Check>
+            </div>
+          </Section>
+
+          <Section title="Ayuda de la IA" summary={opts.ai.suggest ? "Encendida" : "Apagada"}>
+            <Check
+              id="ia-sug"
+              checked={opts.ai.suggest}
+              disabled={!hasAi || briefBusy}
+              onChange={(v) => {
+                set("ai", { suggest: v });
+                if (v) void askBrief();
+              }}
+              hint={hasAi ? "La propuesta llega marcada con «IA» en este panel y puedes cambiarla." : "Añade una API key en Ajustes para usarla."}
+            >
+              Sugerir estilo según el tono del texto
+            </Check>
+            {briefBusy ? <Notice>Leyendo el tono del texto…</Notice> : null}
+            {opts.ai.suggest && brief ? (
+              <div className="rounded-xl border border-line bg-panel-2 p-3 text-sm leading-relaxed">
+                <div>
+                  <span className="text-muted">Tono:</span> {brief.tono}
+                </div>
+                <div className="text-muted">{brief.razon}</div>
+                {briefStale ? (
+                  <Button className="mt-2 h-9" onClick={askBrief} busy={briefBusy}>
+                    El texto cambió: pedir otra sugerencia
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </Section>
+        </div>
+      </section>
+
+      {/* Paso 3 · Ajuste fino */}
+      {mode === "una" && edit ? (
+        <section id="paso-3" className="flex scroll-mt-4 flex-col gap-4 rounded-2xl border border-line-strong bg-panel-2 p-4">
+          <StepHead label="Paso 3 · Ajuste fino" accent>
+            <span className="text-xs text-muted">
+              Propuesta {selected + 1} · {getTemplate(edit.design.templateId).label}
+            </span>
+          </StepHead>
+          <FineTune
+            edit={edit}
+            setEdit={setEdit}
+            emphasisText={emphasisText ?? reading.emphasis.join(", ")}
+            setEmphasisText={setEmphasisText}
+            photo={photo}
+            setPhoto={setPhoto}
+            text={reading.text}
+            hasPhotos={!!hasPhotos}
+            aiImages={aiImages}
+            photoQuery={brief?.fotoClave ?? ""}
+            patternDefaults={effective.patterns}
+          />
+          {opts.extras.caption || opts.extras.hashtags ? (
+            <div className="flex flex-col gap-3 border-t border-line pt-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Texto para la publicación</h3>
+                <Button className="h-9" onClick={writeCaption} busy={busy === "caption"}>
+                  {caption ? "Escribir otro" : "Escribirlo con IA"}
                 </Button>
-              ) : null}
+              </div>
+              {caption ? <CaptionBox caption={caption} showText={opts.extras.caption} showTags={opts.extras.hashtags} /> : null}
             </div>
           ) : null}
-        </Section>
-      </Panel>
+        </section>
+      ) : null}
+    </>
+  );
 
-      {/* Paso 3 · Propuestas y ajuste */}
-      <section className="flex min-w-0 flex-col gap-4">
-        <div className="flex items-baseline justify-between">
+  return (
+    <StudioLayout steps={steps} aside={aside} footer={footer}>
+      {mode === "lote" ? (
+        <>
           <div>
-            <div className="eyebrow">Paso 3 · Propuestas</div>
-            <h2 className="mt-1 font-display text-lg font-bold">{designs ? "Elige una y ajústala" : "Crea cuatro propuestas"}</h2>
+            <div className="eyebrow">Lote · {batchTexts.length} {batchTexts.length === 1 ? "frase" : "frases"}</div>
+            <h1 className="mt-1 font-display text-xl font-bold">Así saldrán las primeras</h1>
           </div>
-          {designs ? <span className="text-sm text-muted">{designs.length} propuestas</span> : null}
-        </div>
-
-        {mode === "lote" ? (
-          <LotePreview texts={batchTexts} opts={effective} brand={brand} formatTouched={formatTouched} />
-        ) : !designs ? (
+          {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
+          <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+            <LotePreview texts={batchTexts} opts={effective} brand={brand} formatTouched={formatTouched} />
+          </div>
+        </>
+      ) : !designs || !edit ? (
+        <>
+          <div>
+            <div className="eyebrow">Propuestas</div>
+            <h1 className="mt-1 font-display text-xl font-bold">Crea cuatro propuestas</h1>
+          </div>
           <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-line-strong p-10 text-center">
-            <p className="max-w-sm text-muted">Con las opciones del panel se crean cuatro diseños distintos. Después eliges uno y ajustas paleta, letra, tamaño y fondo.</p>
+            <p className="max-w-sm text-muted">Con las opciones del panel se crean cuatro diseños distintos. Después eliges uno y lo ajustas en el paso 3.</p>
             <div className="flex flex-wrap justify-center gap-2">
               <Button variant="primary" onClick={() => createProposals(0)} disabled={!reading.text}>
                 Crear 4 propuestas
               </Button>
               <Button onClick={randomProposals} disabled={!reading.text}>
-                🎲 4 al azar
+                <Dice />4 al azar
               </Button>
             </div>
           </div>
-        ) : (
-          <>
-            <div ref={thumbsRef} className="grid grid-cols-4 gap-3">
+        </>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="eyebrow">
+                Propuesta {selected + 1} de {designs.length} · {getTemplate(edit.design.templateId).label}
+              </div>
+              <h1 className="mt-1 font-display text-xl font-bold">Elige una y ajústala</h1>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button className="h-10" onClick={randomizeSelected} title="Cambia la propuesta elegida por una al azar con lo marcado en el panel">
+                <Dice />
+                Aleatorio
+              </Button>
+              {history.length ? (
+                <Button className="h-10" onClick={undoRandom} title="Volver al diseño anterior">
+                  <Undo />
+                  Anterior
+                </Button>
+              ) : null}
+              <Button className={`h-10 ${selectedSaved ? "text-suggest" : ""}`} aria-pressed={selectedSaved} onClick={() => void toggleSaved(selected)} title={selectedSaved ? "Quitar de mis plantillas" : "Guardar en mis plantillas"}>
+                <Star filled={selectedSaved} />
+                {selectedSaved ? "Guardada" : "Guardar plantilla"}
+              </Button>
+              <Button variant="primary" className="h-10" onClick={download} busy={busy === "download"}>
+                {busy === "download" ? null : <Download />}
+                {multi ? `Descargar ${editSlides.length} PNG` : "Descargar PNG"}
+              </Button>
+            </div>
+          </div>
+          {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
+
+          <div ref={stageRef} className="flex min-h-0 flex-1 flex-col items-center gap-5 lg:flex-row lg:justify-center lg:gap-8 lg:overflow-hidden">
+            <div className="flex min-w-0 max-w-full flex-col items-center gap-2.5">
+              <div className="scroll-thin flex max-w-full gap-4 overflow-x-auto pb-1">
+                {editSlides.map((s) => (
+                  <SlidePreview key={s.index} spec={s} width={previewW} className="flex-none rounded-[10px] shadow-[0_30px_70px_rgba(0,0,0,0.55)]" />
+                ))}
+              </div>
+              <p className="text-xs text-muted">
+                {multi ? `${editSlides.length} imágenes` : "1 imagen"} de {editSlides[0]?.width * (effective.hiRes ? 2 : 1)} × {editSlides[0]?.height * (effective.hiRes ? 2 : 1)} px
+                {photo?.credit ? ` · Foto: ${photo.credit}` : ""}
+                {designs.length > 1 ? " · ← → para cambiar de propuesta" : ""}
+              </p>
+            </div>
+            <div role="group" aria-label="Propuestas" className="flex flex-none gap-2.5 lg:flex-col">
               {designs.map((d, i) => {
-                const s = slidesFor(d, i === selected && edit ? edit : undefined)[0];
+                const s = slidesFor(d, i === selected ? edit : undefined)[0];
                 const isSaved = !!savedMatch(d);
+                const label = getTemplate(d.templateId).label;
                 return (
-                  <div key={`${seed}-${i}`} className="relative min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => pick(i)}
-                      aria-pressed={selected === i}
-                      aria-label={`Propuesta ${i + 1}: ${getTemplate(d.templateId).label}`}
-                      className={`w-full rounded-[10px] p-0.5 text-left transition-shadow ${selected === i ? "ring-2 ring-accent ring-offset-2 ring-offset-ink" : "opacity-85 hover:opacity-100"}`}
-                    >
-                      <SlidePreview spec={s} width={Math.max(60, Math.floor((thumbsWidth - 36) / 4) - 4)} className="rounded-lg" />
-                      <span className="mt-1.5 block truncate pr-6 text-xs text-muted">
-                        {getTemplate(d.templateId).label}
-                        {d.background === "patron" && d.pattern ? ` · ${d.pattern.layers.map(patternLabel).join(" + ")}` : ""}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void toggleSaved(i)}
-                      aria-pressed={isSaved}
-                      aria-label={isSaved ? "Quitar de mis plantillas" : "Guardar como plantilla"}
-                      title={isSaved ? "Quitar de mis plantillas" : "Guardar como plantilla"}
-                      className={`absolute bottom-0 right-0 px-1 text-base leading-5 ${isSaved ? "text-suggest" : "text-muted hover:text-text"}`}
-                    >
-                      {isSaved ? "★" : "☆"}
-                    </button>
-                  </div>
+                  <button
+                    key={`${seed}-${i}`}
+                    type="button"
+                    onClick={() => pick(i)}
+                    aria-pressed={selected === i}
+                    aria-label={`Propuesta ${i + 1}: ${label}${isSaved ? " (guardada)" : ""}`}
+                    title={d.background === "patron" && d.pattern ? `${label} · ${d.pattern.layers.map(patternLabel).join(" + ")}` : label}
+                    className={`flex flex-col gap-1.5 rounded-[10px] p-0.5 text-left text-xs transition-shadow ${selected === i ? "text-text ring-2 ring-accent ring-offset-2 ring-offset-ink" : "text-muted opacity-85 hover:opacity-100"}`}
+                    style={{ width: thumbW + 4 }}
+                  >
+                    <SlidePreview spec={s} width={thumbW} className="rounded-md" />
+                    <span className="flex items-center gap-1 truncate px-0.5">
+                      {i + 1} · {label}
+                      {isSaved ? <Star size={11} filled className="flex-none text-suggest" /> : null}
+                    </span>
+                  </button>
                 );
               })}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => createProposals(seed + 1)}>Crear otras 4</Button>
-              <Button onClick={randomizeSelected} title="Cambia la propuesta elegida por una al azar con lo marcado en el panel">
-                🎲 Aleatorio
-              </Button>
-              <Button onClick={undoRandom} disabled={!history.length} title="Volver al diseño anterior">
-                ↶ Anterior
-              </Button>
-              <Button onClick={randomProposals}>4 al azar</Button>
-            </div>
-
-            {edit ? (
-              <div className="grid gap-5 rounded-2xl border border-line bg-panel p-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-                <div ref={previewRef} className="flex min-w-0 flex-col gap-3">
-                  <div className="scroll-thin flex gap-3 overflow-x-auto pb-1">
-                    {editSlides.map((s) => (
-                      <SlidePreview
-                        key={s.index}
-                        spec={s}
-                        width={editSlides.length > 1 ? Math.min(300, previewWidth - 40) : Math.min(previewWidth, s.height > s.width * 1.5 ? 340 : 480)}
-                        className="flex-none rounded-lg shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
-                      />
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted">
-                    {editSlides.length > 1 ? `${editSlides.length} imágenes` : "1 imagen"} de {editSlides[0]?.width * (effective.hiRes ? 2 : 1)} ×{" "}
-                    {editSlides[0]?.height * (effective.hiRes ? 2 : 1)} px
-                    {photo?.credit ? ` · Foto: ${photo.credit}` : ""}
-                  </p>
-                </div>
-                <FineTune
-                  edit={edit}
-                  setEdit={setEdit}
-                  emphasisText={emphasisText ?? reading.emphasis.join(", ")}
-                  setEmphasisText={setEmphasisText}
-                  photo={photo}
-                  setPhoto={setPhoto}
-                  text={reading.text}
-                  hasPhotos={!!hasPhotos}
-                  aiImages={aiImages}
-                  photoQuery={brief?.fotoClave ?? ""}
-                  patternDefaults={effective.patterns}
-                />
-              </div>
-            ) : null}
-
-            {opts.extras.caption || opts.extras.hashtags ? (
-              <div className="flex flex-col gap-3 rounded-2xl border border-line bg-panel p-5">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">Texto para la publicación</h3>
-                  <Button className="h-9" onClick={writeCaption} busy={busy === "caption"}>
-                    {caption ? "Escribir otro" : "Escribirlo con IA"}
-                  </Button>
-                </div>
-                {caption ? <CaptionBox caption={caption} showText={opts.extras.caption} showTags={opts.extras.hashtags} /> : null}
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="primary" className="min-w-56" onClick={download} busy={busy === "download"}>
-                {editSlides.length > 1 ? `Descargar carrusel (${editSlides.length} PNG)` : "Descargar PNG"}
-              </Button>
-              {message && mode === "una" ? <Notice tone={message.tone}>{message.text}</Notice> : null}
-            </div>
-          </>
-        )}
-      </section>
-    </main>
+          </div>
+        </>
+      )}
+    </StudioLayout>
   );
 }
 
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
+function Chip({ children, suggest, title }: { children: React.ReactNode; suggest?: boolean; title?: string }) {
   return (
-    <div className="flex justify-between gap-3 text-sm">
-      <span className="text-muted">{k}</span>
-      <span>{v}</span>
-    </div>
+    <span title={title} className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-xs ${suggest ? "border-suggest-line text-suggest" : "border-line text-muted"}`}>
+      {children}
+    </span>
   );
 }
+
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+const sameSet = <T,>(a: T[], b: T[]) => a.length === b.length && a.every((x) => b.includes(x));
 
 function FontChip({
   active,
@@ -815,7 +912,6 @@ function FineTune({
     setD({ background: b, pattern: b === "patron" ? (d.pattern ?? makePattern(patternDefaults, randomSeed())) : d.pattern });
   return (
     <div className="flex flex-col gap-4 text-sm">
-      <h3 className="font-semibold">Ajuste fino</h3>
       <div className="flex flex-col gap-1.5">
         <span className="text-muted">Paleta</span>
         <div className="flex flex-wrap gap-1.5">
@@ -950,7 +1046,8 @@ function PatternTune({
       <div className="flex items-center justify-between">
         <span className="text-muted">Patrón</span>
         <Button className="h-8 px-3 text-sm" onClick={() => set({ seed: randomSeed() })}>
-          🎲 Otra variación
+          <Dice size={15} />
+          Otra variación
         </Button>
       </div>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Capas del patrón (hasta 3)">

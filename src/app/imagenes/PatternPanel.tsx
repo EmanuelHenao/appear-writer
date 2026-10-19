@@ -26,11 +26,16 @@ export function PatternPanel({
     if (next.length) set({ kinds: next });
   };
   const usesEmoji = value.kinds.some((k) => k.startsWith("emoji"));
+  const isSuggested = JSON.stringify({ ...value, kinds: [...value.kinds].sort() }) === JSON.stringify({ ...suggested, kinds: [...suggested.kinds].sort() });
+  const summary = active
+    ? `${value.kinds.length} marcados · ${value.combine ? `${value.layers} capas` : "uno al azar"}`
+    : "Fondo sin marcar";
 
   return (
-    <Section title="Patrones generativos" note={active ? `(${value.kinds.length} marcados)` : "(marca el fondo «Patrón generativo»)"}>
+    <Section title="Patrones" summary={summary} suggested={active && isSuggested}>
       <div className={`flex flex-col gap-3 ${active ? "" : "opacity-60"}`}>
         <p className="text-xs leading-relaxed text-muted">
+          {active ? "" : "Marca el fondo «Patrón generativo» para usarlos. "}
           Solo los tipos marcados entran en la generación. Se dibujan con la paleta elegida y sin IA.
         </p>
         {PATTERN_GROUPS.map((g) => {
