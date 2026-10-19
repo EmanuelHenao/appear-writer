@@ -7,7 +7,7 @@ import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
 import { Button, Check, Choice, Notice, Section, SuggestDot, TextInput, saveBlob } from "@/components/ui";
 import { useSettings } from "@/components/useSettings";
 import { describeSource, type Source } from "@/book/model";
-import { BOOK_PALETTES, COVERS, PAGE_SIZES, suggestedBookOptions, type BookOptions } from "@/book/options";
+import { BOOK_PALETTES, CHAPTER_RULES, chapterRuleOf, COVERS, PAGE_SIZES, suggestedBookOptions, type BookOptions } from "@/book/options";
 import { BOOK_FONT_CHOICES, FONTS, fontStack } from "@/design/fonts";
 import type { PhotoRef } from "@/design/spec";
 
@@ -526,9 +526,40 @@ export function BookStudio() {
                         </label>
                       ) : null}
                     </fieldset>
-                    <Check id="c-month" checked={o.content.chaptersByMonth} onChange={(v) => upContent({ chaptersByMonth: v })} suggested={S(true, sug?.content.chaptersByMonth)}>
-                      Un capítulo por mes
-                    </Check>
+                    <fieldset className="col-span-2 flex flex-col gap-2">
+                      <legend className="mb-1 text-sm text-muted">Capítulos</legend>
+                      <div className="grid grid-cols-2 gap-2">
+                        {CHAPTER_RULES.map((r) => (
+                          <Choice
+                            key={r.id}
+                            name="caprule"
+                            value={r.id}
+                            checked={chapterRuleOf(o) === r.id}
+                            suggested={sug ? chapterRuleOf(sug) === r.id : false}
+                            onSelect={() => upContent({ chapterRule: r.id, chaptersByMonth: r.id === "mes" })}
+                          >
+                            <span className="block text-sm">{r.label}</span>
+                            <span className="block text-xs text-muted">{r.hint}</span>
+                          </Choice>
+                        ))}
+                      </div>
+                      {chapterRuleOf(o) === "silencio" ? (
+                        <label className="flex items-center gap-2 text-sm">
+                          <span className="text-muted">Nuevo capítulo tras</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={o.content.silenceDays}
+                            onChange={(e) => upContent({ silenceDays: Math.max(1, Math.min(365, Number(e.target.value) || 1)) })}
+                            className="h-9 w-20 rounded-lg border border-line bg-ink px-2 text-center font-mono"
+                            aria-label="Días de silencio"
+                          />
+                          <span className="text-muted">días sin mensajes</span>
+                          {o.content.silenceDays === 14 ? <SuggestDot /> : null}
+                        </label>
+                      ) : null}
+                    </fieldset>
                     <Check id="c-name" checked={o.content.showName} onChange={(v) => upContent({ showName: v })} suggested={S(true, sug?.content.showName)}>
                       Nombre de quien escribe
                     </Check>
@@ -710,8 +741,8 @@ export function BookStudio() {
 function contentSummary(o: BookOptions, hasChats: boolean): string {
   if (hasChats) {
     const style = o.content.bubbles ? "Burbujas" : o.content.onePerPage ? "Uno por página" : "Seguidos";
-    const meta = [o.content.showName && "nombre", o.content.showDate && "fecha", o.content.showTime && "hora"].filter(Boolean).join(", ");
-    return meta ? `${style} · ${meta}` : style;
+    const rule = CHAPTER_RULES.find((r) => r.id === chapterRuleOf(o))?.label.toLowerCase() ?? "";
+    return `${style} · ${rule}`;
   }
   return [o.content.titlePage && "Portadilla", o.content.toc && "Índice", o.content.ornaments && "Ornamentos"].filter(Boolean).join(" · ") || "Solo el texto";
 }

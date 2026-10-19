@@ -29,6 +29,13 @@ export const BookOptionsSchema = z.object({
     chatPhotos: z.boolean(),
     stockPhotos: z.boolean(),
     chaptersByMonth: z.boolean(),
+    /**
+     * Cómo se cortan los chats en capítulos. Sin valor (libros de antes)
+     * vale «mes» o «ninguno» según chaptersByMonth.
+     */
+    chapterRule: z.enum(["mes", "anio", "silencio", "ninguno"]).optional(),
+    /** Días sin mensajes que abren un capítulo nuevo con la regla «silencio». */
+    silenceDays: z.number().int().min(1).max(365).default(14),
     titlePage: z.boolean(),
     toc: z.boolean(),
     dedication: z.string().max(400),
@@ -81,6 +88,26 @@ function yearOf(iso: string | null | undefined): string {
   return iso ? iso.slice(0, 4) : "";
 }
 
+export type ChapterRule = NonNullable<BookOptions["content"]["chapterRule"]>;
+
+export const CHAPTER_RULES: { id: ChapterRule; label: string; hint: string }[] = [
+  { id: "mes", label: "Por mes", hint: "Un capítulo por cada mes" },
+  { id: "anio", label: "Por año", hint: "Para chats de muchos años" },
+  { id: "silencio", label: "Por silencios", hint: "Cuando dejasteis de escribiros unos días" },
+  { id: "ninguno", label: "Sin capítulos", hint: "Todo seguido" },
+];
+
+export function chapterRuleOf(o: BookOptions): ChapterRule {
+  return o.content.chapterRule ?? (o.content.chaptersByMonth ? "mes" : "ninguno");
+}
+
+/** Por mes, salvo que el chat dure más de dos años: entonces, por año. */
+function suggestedChapterRule(chats: Source[]): ChapterRule {
+  const months = (iso: string | null | undefined) => (iso ? Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) : NaN);
+  const span = Math.max(...chats.map((c) => months(c.meta.lastDate) - months(c.meta.firstDate)).filter((n) => !Number.isNaN(n)), 0);
+  return span > 24 ? "anio" : "mes";
+}
+
 /** Valores sugeridos a partir de las fuentes cargadas. */
 export function suggestedBookOptions(sources: Source[]): BookOptions {
   const chats = sources.filter((s) => s.kind === "whatsapp");
@@ -113,6 +140,8 @@ export function suggestedBookOptions(sources: Source[]): BookOptions {
       chatPhotos: hasImages,
       stockPhotos: false,
       chaptersByMonth: chats.length > 0,
+      chapterRule: chats.length ? suggestedChapterRule(chats) : "ninguno",
+      silenceDays: 14,
       titlePage: true,
       toc: true,
       dedication: "",
