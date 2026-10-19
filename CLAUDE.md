@@ -50,14 +50,19 @@ docker compose up -d --build
 - `src/design/`: motor de imágenes compartido entre cliente y servidor.
   - `fit.ts`: lectura determinista del texto (longitud, formato sugerido, carrusel, destacado).
   - `fonts.ts` y `palettes.ts`: registros (fuentes de @fontsource, paletas con roles fijos).
-  - `templates/`: las 12 plantillas como componentes React con estilos en línea; `autofit.ts` ajusta la letra.
+  - `templates/`: las 16 plantillas como componentes React con estilos en línea; `autofit.ts` ajusta la letra.
   - `patterns.tsx`: fondos generativos deterministas (semilla → mismo dibujo en vista previa, PNG y plantilla guardada). Cada tipo nuevo va en `PATTERNS` y `PAINTERS`.
   - `compose.ts`: esquema de opciones (zod), valores sugeridos, propuestas, diseño aleatorio (`randomDesign`) y diapositivas.
   - `saved.ts`: esquema de «Mis plantillas» (`DATA_DIR/templates.json`, vía `/api/templates`).
+  - `caption.ts`: texto de publicación y hashtags sin IA (plantillas por estilo y palabras clave del texto). Lo usa el estudio y `/api/render/batch` (un `.txt` por imagen).
+- `src/components/`: `StudioLayout.tsx` (dos columnas; `stickyPreview` fija la vista previa arriba en móvil), `ui.tsx` (`Section` plegable con `summary`), `icons.tsx`, `OwnPhotos.tsx` (subir y elegir fotos propias).
 - `src/lib/render/`: Chromium compartido (Playwright). Los documentos se sirven desde un origen virtual (`http://appear.local/`) con fuentes y archivos locales. `image.ts` renderiza las mismas plantillas con `react-dom/server`.
 - `src/lib/ai/`: `detect.ts` detecta el proveedor por la key; `client.ts` usa el SDK oficial de Anthropic (salida estructurada) y HTTP directo para OpenAI/compatibles y Gemini; `tasks.ts` contiene los prompts.
 - `src/import/`: importadores (WhatsApp, texto, docx con mammoth, pdf con unpdf) hacia el modelo `Block` de `src/book/model.ts`.
-- `src/book/`: opciones y paletas del libro, `structure.ts` (capítulos deterministas), `covers.ts`, `html.ts` + `paginate.js.ts` (documento único para vista previa, PDF y PNG; el paginador corre en el navegador y, en la vista previa, atiende `postMessage` `book-control` para página/doble página, zoom y navegación, y responde con `book-view`), `epub.ts`, `service.ts`.
+- `src/book/`: opciones y paletas del libro, `structure.ts` (capítulos deterministas: por mes, año, silencios o ninguno, más las correcciones de `fixes.ts`), `covers.ts`, `html.ts` + `paginate.js.ts` (documento único para vista previa, PDF y PNG; el paginador corre en el navegador y, en la vista previa, atiende `postMessage` `book-control` para página/doble página, zoom y navegación, y responde con `book-view`), `epub.ts`, `service.ts`.
+- `src/lib/spelling.ts`: ortografía sin IA con nspell y `dictionary-es` (leído de `node_modules`). Solo propone; lo aplicado se guarda en `book.options.fixes`.
+- `src/lib/uploads.ts`: fotos propias en `DATA_DIR/uploads/propias` (`/api/uploads`).
+- `docs/PRODUCTO.md`: funciones y comportamiento del producto. Actualízalo cuando cambie lo que ve el usuario.
 - Persistencia en archivos bajo `DATA_DIR` (por defecto `./data`): `settings.json`, `templates.json`, `uploads/propias/` (tus fotos, vía `/api/uploads`), `gallery/<id>/`, `books/<id>/book.json` + `media/`. No hay base de datos.
 - Acceso con contraseña única (`APP_PASSWORD`, Basic Auth en `src/proxy.ts`).
 
