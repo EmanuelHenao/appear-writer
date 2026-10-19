@@ -21,6 +21,13 @@ Estado actual: fase de diseño. Todavía no hay código. El plan aprobado está 
 - **Las fotos de personas deben parecer reales.** Se usan bancos de fotos (Unsplash y Pexels) en lugar de imágenes generadas.
 - **El diseño es la prioridad.** Ante decisiones visuales, propón opciones y pregunta antes de decidir.
 
+## Decisiones de diseño (galería aprobada)
+
+- **Estilos de imagen:** bold editorial, color vivo (bloques planos y degradados con grano), minimalista y artístico (collage, acuarela). **Nada de neón, brillos ni efecto vidrio:** el usuario los descartó.
+- **4 propuestas** por texto.
+- **Portadas de libro:** A (tela verde con marco dorado), C (tipográfica, título enorme), D (círculos superpuestos sobre azul tinta) y E (lino con etiqueta). La portada con foto se descartó.
+- **Interior del libro:** Cormorant es la letra sugerida, pero el usuario elige entre Cormorant, Caslon, Lora y Fraunces. Nombre, fecha y hora de cada mensaje son casillas separadas (por defecto: nombre y fecha).
+
 ## Arquitectura prevista
 
 - Next.js (App Router), TypeScript y Tailwind, en un solo servicio.

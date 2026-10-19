@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/* Estudio oscuro creativo: la interfaz se retira para que los diseños
+   generados sean los protagonistas. Un único acento lila y un ámbar para
+   marcar los valores sugeridos por el sistema. */
+@theme {
+  --color-ink: #0e0d12;
+  --color-panel: #16151c;
+  --color-panel-2: #1e1c26;
+  --color-line: #2b2935;
+  --color-line-strong: #3a3746;
+  --color-text: #eeebf5;
+  --color-muted: #a29fb0;
+  --color-accent: #b6a6ff;
+  --color-accent-soft: #221e33;
+  --color-accent-ink: #17132b;
+  --color-suggest: #ffc56b;
+  --color-suggest-line: #5a4a2a;
+  --color-danger: #ff8a7a;
+  --color-ok: #8fe3b0;
+
+  --font-display: "Bricolage Grotesque Variable", system-ui, sans-serif;
+  --font-sans: "Instrument Sans Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--color-accent);
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+input[type="range"] {
+  accent-color: var(--color-accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
