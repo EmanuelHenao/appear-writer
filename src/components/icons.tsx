@@ -77,3 +77,66 @@ export const Minus = (p: P) => (
     <path d="M5 12h14" />
   </Svg>
 );
+
+export const EyeOff = (p: P) => (
+  <Svg {...p}>
+    <path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4.5 10 7a13 13 0 01-3 4M6.1 6.1C3.9 7.5 2.5 9.6 2 12c1 2.5 5 7 10 7a9.7 9.7 0 004.5-1.1" />
+  </Svg>
+);
+
+export const Eye = (p: P) => (
+  <Svg {...p}>
+    <path d="M2 12c1-2.5 5-7 10-7s9 4.5 10 7c-1 2.5-5 7-10 7S3 14.5 2 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+);
+
+export const Search = (p: P) => (
+  <Svg size={15} strokeWidth={2} {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-4-4" />
+  </Svg>
+);
+
+export const Bookmark = (p: P) => (
+  <Svg {...p}>
+    <path d="M6 3h12v18l-6-4-6 4z" />
+  </Svg>
+);
+
+export const PagePlus = (p: P) => (
+  <Svg {...p}>
+    <path d="M6 3h8l4 4v14H6z" />
+    <path d="M12 10v6M9 13h6" />
+  </Svg>
+);
+
+export const Close = (p: P) => (
+  <Svg size={14} strokeWidth={2.2} {...p}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Svg>
+);
+
+export const ClearFormat = (p: P) => (
+  <Svg size={15} strokeWidth={2} {...p}>
+    <path d="M4 7V5h12v2M10 5l-3 14M3 21L21 3" />
+  </Svg>
+);
+
+export const AlignLeft = (p: P) => (
+  <Svg size={15} strokeWidth={2} {...p}>
+    <path d="M4 6h16M4 12h10M4 18h14" />
+  </Svg>
+);
+
+export const AlignCenter = (p: P) => (
+  <Svg size={15} strokeWidth={2} {...p}>
+    <path d="M4 6h16M7 12h10M5 18h14" />
+  </Svg>
+);
+
+export const AlignRight = (p: P) => (
+  <Svg size={15} strokeWidth={2} {...p}>
+    <path d="M4 6h16M10 12h10M6 18h14" />
+  </Svg>
+);

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Shortcuts, type ShortcutGroup } from "@/components/Shortcuts";
 import { SlidePreview } from "@/components/SlidePreview";
 import { Dice, Download, Star, Undo } from "@/components/icons";
 import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
@@ -20,6 +21,7 @@ import {
 } from "@/design/compose";
 import { LENGTH_LABEL, LIMITS, readText, type FormatId } from "@/design/fit";
 import { FONTS, IMAGE_FONT_CHOICES, fontStack, type FontId } from "@/design/fonts";
+import { CAPTION_STYLES, templateCaption, type Caption, type CaptionStyle } from "@/design/caption";
 import { getPalette, PALETTES } from "@/design/palettes";
 import { INTENSITIES, makePattern, PATTERNS, patternLabel, randomSeed, type Intensity, type PatternDesign, type PatternId } from "@/design/patterns";
 import type { ImageRequest } from "@/design/request";
@@ -75,10 +77,17 @@ export function ImageStudio() {
   const saved = useSavedTemplates();
   const [usedSaved, setUsedSaved] = useState<string[]>([]);
   const [photo, setPhoto] = useState<PhotoRef | null>(null);
-  const [caption, setCaption] = useState<{ texto: string; hashtags: string[] } | null>(null);
+  /** Texto de publicación escrito o editado (por ti o por la IA); null = el de la plantilla. */
+  const [caption, setCaption] = useState<Caption | null>(null);
+  const [captionFromAi, setCaptionFromAi] = useState(false);
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("reflexion");
+  const [captionVariant, setCaptionVariant] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "error" | "info"; text: string } | null>(null);
   const [batchText, setBatchText] = useState("");
+  /** Ajustes a mano de frases del lote, por posición. */
+  const [loteEdits, setLoteEdits] = useState<Record<number, Edit>>({});
+  const [loteSel, setLoteSel] = useState<number | null>(null);
   const [stageRef, stage] = useSize<HTMLDivElement>();
   const wide = useMedia("(min-width: 1024px)");
 
@@ -248,6 +257,7 @@ export function ImageStudio() {
     });
 
   const editSlides = edit ? slidesFor(edit.design, edit) : [];
+  const captionShown = caption ?? templateCaption(reading.text, { style: captionStyle, variant: captionVariant, handle: opts.brand.handle ? brandHandle : "" });
 
   function request(): ImageRequest | null {
     if (!edit) return null;
@@ -259,7 +269,7 @@ export function ImageStudio() {
       emphasis,
       label: edit.label || undefined,
       photo,
-      caption: caption ?? undefined,
+      caption: opts.extras.caption || opts.extras.hashtags ? { texto: opts.extras.caption ? captionShown.texto : "", hashtags: opts.extras.hashtags ? captionShown.hashtags : [] } : undefined,
     };
   }
 
@@ -283,7 +293,8 @@ export function ImageStudio() {
     setBusy("caption");
     setMessage(null);
     try {
-      setCaption(await postJson("/api/ai", { task: "caption", text: reading.text }));
+      setCaption(await postJson<Caption>("/api/ai", { task: "caption", text: reading.text }));
+      setCaptionFromAi(true);
     } catch (e) {
       setMessage({ tone: "error", text: (e as Error).message });
     } finally {
@@ -296,11 +307,26 @@ export function ImageStudio() {
     .map((t) => t.trim())
     .filter(Boolean);
 
+  const loteDesigns = mode === "lote" && batchTexts.length ? buildProposals(effective, 0, Math.max(4, batchTexts.length)) : [];
+  const sel = loteSel !== null && loteSel < batchTexts.length ? loteSel : null;
+  const loteEditFor = (i: number): Edit => loteEdits[i] ?? { design: loteDesigns[i], sizeScale: 1, label: "" };
+
   async function runBatch() {
     setBusy("batch");
     setMessage(null);
     try {
-      await downloadFrom("/api/render/batch", { texts: batchTexts, options: effective, autoFormat: !formatTouched }, "lote.zip");
+      await downloadFrom(
+        "/api/render/batch",
+        {
+          texts: batchTexts,
+          options: effective,
+          autoFormat: !formatTouched,
+          designs: batchTexts.map((_, i) => loteEdits[i]?.design ?? null),
+          sizeScales: batchTexts.map((_, i) => loteEdits[i]?.sizeScale ?? null),
+          caption: { style: captionStyle, handle: opts.brand.handle ? brandHandle : "" },
+        },
+        "lote.zip",
+      );
       setMessage({ tone: "ok", text: `Listo: ${batchTexts.length} imágenes en un ZIP${effective.extras.gallery ? ", también guardadas en la galería" : ""}.` });
     } catch (e) {
       setMessage({ tone: "error", text: (e as Error).message });
@@ -318,15 +344,27 @@ export function ImageStudio() {
     setEmphasisText(null);
   }
 
-  // ← y → cambian de propuesta (si no se está escribiendo).
+  // Atajos (si no se está escribiendo): ← → cambian de propuesta, R da una al azar y Ctrl+Z vuelve a la anterior.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!designs || mode !== "una" || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (!designs || mode !== "una" || e.altKey) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      e.preventDefault();
-      pick((selected + (e.key === "ArrowRight" ? 1 : designs.length - 1)) % designs.length);
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.shiftKey && e.key.toLowerCase() === "z") {
+        if (!history.length) return;
+        e.preventDefault();
+        undoRandom();
+        return;
+      }
+      if (mod) return;
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        pick((selected + (e.key === "ArrowRight" ? 1 : designs.length - 1)) % designs.length);
+      } else if (e.key.toLowerCase() === "r" && !e.shiftKey) {
+        e.preventDefault();
+        randomizeSelected();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -337,16 +375,15 @@ export function ImageStudio() {
   const multi = editSlides.length > 1;
   let thumbW: number;
   let previewW: number;
-  if (wide) {
-    thumbW = clamp(Math.floor(((stage.height - 4 * 26 - 3 * 10) / 4) * aspect), 44, 104);
-    const availW = stage.width - thumbW - 32;
-    const availH = stage.height - 30;
+  {
+    // En móvil el hueco es una franja fija arriba: miniaturas sin nombre y sin pie.
+    const labelH = wide ? 26 : 4;
+    thumbW = clamp(Math.floor(((stage.height - 4 * labelH - 3 * (wide ? 10 : 6)) / 4) * aspect), wide ? 44 : 30, 104);
+    const availW = stage.width - thumbW - (wide ? 32 : 16);
+    const availH = stage.height - (wide ? 30 : 0);
     previewW = Math.floor(Math.min(multi ? availW * 0.82 : availW, availH * aspect));
-  } else {
-    thumbW = clamp(Math.floor((stage.width - 30) / 4) - 6, 44, 104);
-    previewW = Math.floor(Math.min(stage.width * (multi ? 0.85 : 1), 520));
   }
-  previewW = Math.max(previewW, 160);
+  previewW = Math.max(previewW, 120);
 
   const fmt = FORMATS.find((f) => f.id === effective.format) ?? FORMATS[0];
   const familySummary = opts.families.length === FAMILIES.length ? "Los 4" : FAMILIES.filter((f) => opts.families.includes(f.id)).map((f) => f.label).join(" · ");
@@ -358,7 +395,8 @@ export function ImageStudio() {
     mode === "lote"
       ? [
           { id: "paso-1", label: "Textos", done: batchTexts.length > 0, current: !batchTexts.length },
-          { id: "paso-2", label: "Opciones", current: batchTexts.length > 0 },
+          { id: "paso-2", label: "Opciones", current: batchTexts.length > 0 && sel === null },
+          ...(sel !== null ? [{ id: "paso-3", label: "Ajuste fino", current: true }] : []),
         ]
       : [
           { id: "paso-1", label: "Texto", done: !!reading.text, current: !reading.text },
@@ -581,7 +619,7 @@ export function ImageStudio() {
             <div className="grid grid-cols-2 gap-2.5">
               {BACKGROUNDS.map((b) => {
                 const on = opts.backgrounds.includes(b.id);
-                const unavailable = (b.id === "foto" && !hasPhotos) || (b.id === "ia" && !aiImages);
+                const unavailable = b.id === "ia" && !aiImages;
                 return (
                   <Check
                     key={b.id}
@@ -590,8 +628,10 @@ export function ImageStudio() {
                     disabled={(on && opts.backgrounds.length === 1) || (!on && unavailable)}
                     suggested={suggested.backgrounds.includes(b.id)}
                     hint={
-                      b.id === "foto" && !hasPhotos
-                        ? "Necesita una key de Unsplash o Pexels"
+                      b.id === "foto"
+                        ? hasPhotos
+                          ? "Tuya o de Unsplash/Pexels"
+                          : "Sube la tuya en el ajuste fino"
                         : b.id === "ia" && !aiImages
                           ? "Necesita una key de OpenAI"
                           : undefined
@@ -658,10 +698,10 @@ export function ImageStudio() {
               <Check id="x-gal" checked={opts.extras.gallery} onChange={(v) => set("extras", { ...opts.extras, gallery: v })} suggested>
                 Guardar en galería
               </Check>
-              <Check id="x-cap" checked={opts.extras.caption} disabled={!hasAi} onChange={(v) => set("extras", { ...opts.extras, caption: v })} hint={!hasAi ? "Necesita IA" : undefined}>
+              <Check id="x-cap" checked={opts.extras.caption} onChange={(v) => set("extras", { ...opts.extras, caption: v })} hint="Con plantillas, sin IA">
                 Texto de publicación
               </Check>
-              <Check id="x-tag" checked={opts.extras.hashtags} disabled={!hasAi} onChange={(v) => set("extras", { ...opts.extras, hashtags: v })} hint={!hasAi ? "Necesita IA" : undefined}>
+              <Check id="x-tag" checked={opts.extras.hashtags} onChange={(v) => set("extras", { ...opts.extras, hashtags: v })} hint="De las palabras del texto">
                 Hashtags
               </Check>
             </div>
@@ -698,6 +738,57 @@ export function ImageStudio() {
         </div>
       </section>
 
+      {/* Paso 3 · Ajuste de una frase del lote */}
+      {mode === "lote" && sel !== null ? (
+        <section id="paso-3" className="flex scroll-mt-4 flex-col gap-4 rounded-2xl border border-line-strong bg-panel-2 p-4">
+          <StepHead label="Paso 3 · Ajuste fino" accent>
+            <span className="text-xs text-muted">
+              Frase {sel + 1} · {getTemplate(loteEditFor(sel).design.templateId).label}
+            </span>
+          </StepHead>
+          <p className="line-clamp-2 text-sm text-muted">«{batchTexts[sel]}»</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              className="h-9"
+              onClick={() => setLoteEdits({ ...loteEdits, [sel]: { ...loteEditFor(sel), design: randomDesign(effective, randomSeed(), (b) => b !== "foto" && b !== "ia") } })}
+              title="Otro diseño al azar para esta frase"
+            >
+              <Dice size={15} />
+              Al azar
+            </Button>
+            {loteEdits[sel] ? (
+              <Button
+                className="h-9"
+                onClick={() => {
+                  const next = { ...loteEdits };
+                  delete next[sel];
+                  setLoteEdits(next);
+                }}
+              >
+                Quitar el ajuste
+              </Button>
+            ) : null}
+            <Button className="h-9" onClick={() => setLoteSel(null)}>
+              Listo
+            </Button>
+          </div>
+          <FineTune
+            batch
+            edit={loteEditFor(sel)}
+            setEdit={(e) => setLoteEdits({ ...loteEdits, [sel]: e })}
+            emphasisText=""
+            setEmphasisText={() => undefined}
+            photo={null}
+            setPhoto={() => undefined}
+            text={batchTexts[sel]}
+            hasPhotos={false}
+            aiImages={false}
+            photoQuery=""
+            patternDefaults={effective.patterns}
+          />
+        </section>
+      ) : null}
+
       {/* Paso 3 · Ajuste fino */}
       {mode === "una" && edit ? (
         <section id="paso-3" className="flex scroll-mt-4 flex-col gap-4 rounded-2xl border border-line-strong bg-panel-2 p-4">
@@ -720,15 +811,32 @@ export function ImageStudio() {
             patternDefaults={effective.patterns}
           />
           {opts.extras.caption || opts.extras.hashtags ? (
-            <div className="flex flex-col gap-3 border-t border-line pt-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Texto para la publicación</h3>
-                <Button className="h-9" onClick={writeCaption} busy={busy === "caption"}>
-                  {caption ? "Escribir otro" : "Escribirlo con IA"}
-                </Button>
-              </div>
-              {caption ? <CaptionBox caption={caption} showText={opts.extras.caption} showTags={opts.extras.hashtags} /> : null}
-            </div>
+            <CaptionPanel
+              caption={captionShown}
+              edited={!!caption}
+              fromAi={captionFromAi}
+              showText={opts.extras.caption}
+              showTags={opts.extras.hashtags}
+              style={captionStyle}
+              hasAi={hasAi}
+              aiBusy={busy === "caption"}
+              onStyle={(st) => {
+                setCaptionStyle(st);
+                setCaption(null);
+                setCaptionFromAi(false);
+              }}
+              onVariant={() => {
+                setCaptionVariant((v) => v + 1);
+                setCaption(null);
+                setCaptionFromAi(false);
+              }}
+              onEdit={(c) => setCaption(c)}
+              onReset={() => {
+                setCaption(null);
+                setCaptionFromAi(false);
+              }}
+              onAi={writeCaption}
+            />
           ) : null}
         </section>
       ) : null}
@@ -736,16 +844,33 @@ export function ImageStudio() {
   );
 
   return (
-    <StudioLayout steps={steps} aside={aside} footer={footer}>
+    <StudioLayout steps={steps} navExtra={<Shortcuts groups={IMAGE_SHORTCUTS} />} aside={aside} footer={footer} stickyPreview={mode === "una" && !!designs && !!edit}>
       {mode === "lote" ? (
         <>
           <div>
-            <div className="eyebrow">Lote · {batchTexts.length} {batchTexts.length === 1 ? "frase" : "frases"}</div>
-            <h1 className="mt-1 font-display text-xl font-bold">Así saldrán las primeras</h1>
+            <div className="eyebrow">
+              Lote · {batchTexts.length} {batchTexts.length === 1 ? "frase" : "frases"}
+              {Object.keys(loteEdits).filter((k) => Number(k) < batchTexts.length).length
+                ? ` · ${Object.keys(loteEdits).filter((k) => Number(k) < batchTexts.length).length} ajustadas`
+                : ""}
+            </div>
+            <h1 className="mt-1 font-display text-xl font-bold">{batchTexts.length ? "Elige una para ajustarla" : "Así saldrán"}</h1>
           </div>
           {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
-            <LotePreview texts={batchTexts} opts={effective} brand={brand} formatTouched={formatTouched} />
+            <LotePreview
+              texts={batchTexts}
+              opts={effective}
+              brand={brand}
+              formatTouched={formatTouched}
+              editFor={loteEditFor}
+              edited={(i) => !!loteEdits[i]}
+              selected={sel}
+              onPick={(i) => {
+                setLoteSel(i === sel ? null : i);
+                if (i !== sel) setTimeout(() => document.getElementById("paso-3")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+              }}
+            />
           </div>
         </>
       ) : !designs || !edit ? (
@@ -773,22 +898,22 @@ export function ImageStudio() {
               <div className="eyebrow">
                 Propuesta {selected + 1} de {designs.length} · {getTemplate(edit.design.templateId).label}
               </div>
-              <h1 className="mt-1 font-display text-xl font-bold">Elige una y ajústala</h1>
+              <h1 className="mt-1 font-display text-xl font-bold max-lg:hidden">Elige una y ajústala</h1>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button className="h-10" onClick={randomizeSelected} title="Cambia la propuesta elegida por una al azar con lo marcado en el panel">
+              <Button className="h-10" onClick={randomizeSelected} title="Cambia la propuesta elegida por una al azar con lo marcado en el panel (R)">
                 <Dice />
-                Aleatorio
+                <span className="max-sm:sr-only">Aleatorio</span>
               </Button>
               {history.length ? (
-                <Button className="h-10" onClick={undoRandom} title="Volver al diseño anterior">
+                <Button className="h-10" onClick={undoRandom} title="Volver al diseño anterior (Ctrl+Z)">
                   <Undo />
-                  Anterior
+                  <span className="max-sm:sr-only">Anterior</span>
                 </Button>
               ) : null}
               <Button className={`h-10 ${selectedSaved ? "text-suggest" : ""}`} aria-pressed={selectedSaved} onClick={() => void toggleSaved(selected)} title={selectedSaved ? "Quitar de mis plantillas" : "Guardar en mis plantillas"}>
                 <Star filled={selectedSaved} />
-                {selectedSaved ? "Guardada" : "Guardar plantilla"}
+                <span className="max-sm:sr-only">{selectedSaved ? "Guardada" : "Guardar plantilla"}</span>
               </Button>
               <Button variant="primary" className="h-10" onClick={download} busy={busy === "download"}>
                 {busy === "download" ? null : <Download />}
@@ -798,20 +923,27 @@ export function ImageStudio() {
           </div>
           {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
 
-          <div ref={stageRef} className="flex min-h-0 flex-1 flex-col items-center gap-5 lg:flex-row lg:justify-center lg:gap-8 lg:overflow-hidden">
+          <div ref={stageRef} className="flex min-h-0 flex-1 items-center justify-center gap-4 overflow-hidden max-lg:h-[34vh] max-lg:flex-none lg:gap-8">
             <div className="flex min-w-0 max-w-full flex-col items-center gap-2.5">
               <div className="scroll-thin flex max-w-full gap-4 overflow-x-auto pb-1">
                 {editSlides.map((s) => (
                   <SlidePreview key={s.index} spec={s} width={previewW} className="flex-none rounded-[10px] shadow-[0_30px_70px_rgba(0,0,0,0.55)]" />
                 ))}
               </div>
-              <p className="text-xs text-muted">
+              <p className="text-xs text-muted max-lg:hidden">
                 {multi ? `${editSlides.length} imágenes` : "1 imagen"} de {editSlides[0]?.width * (effective.hiRes ? 2 : 1)} × {editSlides[0]?.height * (effective.hiRes ? 2 : 1)} px
                 {photo?.credit ? ` · Foto: ${photo.credit}` : ""}
-                {designs.length > 1 ? " · ← → para cambiar de propuesta" : ""}
+                {" · "}
+                <kbd className="font-mono">← →</kbd> propuestas · <kbd className="font-mono">R</kbd> al azar
+                {history.length ? (
+                  <>
+                    {" · "}
+                    <kbd className="font-mono">Ctrl Z</kbd> anterior
+                  </>
+                ) : null}
               </p>
             </div>
-            <div role="group" aria-label="Propuestas" className="flex flex-none gap-2.5 lg:flex-col">
+            <div role="group" aria-label="Propuestas" className="flex flex-none flex-col gap-1.5 lg:gap-2.5">
               {designs.map((d, i) => {
                 const s = slidesFor(d, i === selected ? edit : undefined)[0];
                 const isSaved = !!savedMatch(d);
@@ -828,7 +960,7 @@ export function ImageStudio() {
                     style={{ width: thumbW + 4 }}
                   >
                     <SlidePreview spec={s} width={thumbW} className="rounded-md" />
-                    <span className="flex items-center gap-1 truncate px-0.5">
+                    <span className="flex items-center gap-1 truncate px-0.5 max-lg:sr-only">
                       {i + 1} · {label}
                       {isSaved ? <Star size={11} filled className="flex-none text-suggest" /> : null}
                     </span>
@@ -893,7 +1025,10 @@ function FineTune({
   aiImages,
   photoQuery,
   patternDefaults,
+  batch = false,
 }: {
+  /** En el lote no hay foto, destacado ni etiqueta por frase. */
+  batch?: boolean;
   edit: Edit;
   setEdit: (e: Edit) => void;
   emphasisText: string;
@@ -954,7 +1089,7 @@ function FineTune({
         <span className="text-muted">Fondo</span>
         <select value={d.background} onChange={(e) => setBackground(e.target.value as BackgroundKind)} className="h-10 rounded-lg border border-line bg-ink px-2">
           {BACKGROUNDS.map((b) => (
-            <option key={b.id} value={b.id} disabled={(b.id === "foto" && !hasPhotos) || (b.id === "ia" && !aiImages)}>
+            <option key={b.id} value={b.id} disabled={(b.id === "ia" && !aiImages) || (batch && (b.id === "foto" || b.id === "ia"))}>
               {b.label}
             </option>
           ))}
@@ -964,8 +1099,10 @@ function FineTune({
         <PatternTune pattern={d.pattern} setPattern={(pattern) => setD({ pattern })} defaults={patternDefaults} />
       ) : null}
       {d.background === "foto" || d.background === "ia" ? (
-        <PhotoPicker mode={d.background} text={text} photo={photo} setPhoto={setPhoto} defaultQuery={photoQuery} />
+        <PhotoPicker mode={d.background} text={text} photo={photo} setPhoto={setPhoto} defaultQuery={photoQuery} hasStock={hasPhotos} />
       ) : null}
+      {batch ? null : (
+        <>
       <label className="flex flex-col gap-1.5">
         <span className="text-muted">Destacar (separa con comas)</span>
         <TextInput value={emphasisText} onChange={(e) => setEmphasisText(e.target.value)} placeholder="Créalo." />
@@ -974,51 +1111,166 @@ function FineTune({
         <span className="text-muted">Etiqueta corta (opcional)</span>
         <TextInput value={edit.label} maxLength={40} onChange={(e) => setEdit({ ...edit, label: e.target.value })} placeholder="Lunes · Regla nº 3" />
       </label>
+        </>
+      )}
     </div>
   );
 }
 
-function CaptionBox({ caption, showText, showTags }: { caption: { texto: string; hashtags: string[] }; showText: boolean; showTags: boolean }) {
+/** Texto de la publicación: plantilla sin IA (sugerida), editable, o escrito por la IA si lo pides. */
+function CaptionPanel({
+  caption,
+  edited,
+  fromAi,
+  showText,
+  showTags,
+  style,
+  hasAi,
+  aiBusy,
+  onStyle,
+  onVariant,
+  onEdit,
+  onReset,
+  onAi,
+}: {
+  caption: Caption;
+  edited: boolean;
+  fromAi: boolean;
+  showText: boolean;
+  showTags: boolean;
+  style: CaptionStyle;
+  hasAi: boolean;
+  aiBusy: boolean;
+  onStyle: (s: CaptionStyle) => void;
+  onVariant: () => void;
+  onEdit: (c: Caption) => void;
+  onReset: () => void;
+  onAi: () => void;
+}) {
   const full = [showText ? caption.texto : "", showTags ? caption.hashtags.join(" ") : ""].filter(Boolean).join("\n\n");
   const [copied, setCopied] = useState(false);
   return (
-    <div className="flex flex-col gap-2">
-      <textarea readOnly value={full} rows={5} className="rounded-xl border border-line bg-ink p-3 text-sm leading-relaxed" />
-      <Button
-        className="h-9 self-start"
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(full);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          } catch {
-            setCopied(false);
-          }
-        }}
-      >
-        {copied ? "Copiado" : "Copiar"}
-      </Button>
+    <div className="flex flex-col gap-3 border-t border-line pt-4 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-semibold">Texto para la publicación</h3>
+        <span className="text-xs text-muted">{fromAi ? "Escrito por la IA" : edited ? "Editado por ti" : "Plantilla, sin IA"}</span>
+      </div>
+      {showText ? (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Estilo del texto">
+          {CAPTION_STYLES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              aria-pressed={style === c.id && !fromAi}
+              title={c.hint}
+              onClick={() => onStyle(c.id)}
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${style === c.id && !fromAi ? "border-accent bg-accent-soft" : "border-line text-muted hover:border-line-strong"}`}
+            >
+              {c.label} {c.id === "reflexion" ? <SuggestDot /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {showText ? (
+        <textarea
+          aria-label="Texto de la publicación"
+          value={caption.texto}
+          rows={5}
+          onChange={(e) => onEdit({ ...caption, texto: e.target.value })}
+          className="rounded-xl border border-line bg-ink p-3 leading-relaxed"
+        />
+      ) : null}
+      {showTags ? (
+        <TextInput
+          aria-label="Hashtags"
+          value={caption.hashtags.join(" ")}
+          onChange={(e) => onEdit({ ...caption, hashtags: e.target.value.split(/\s+/).filter(Boolean) })}
+        />
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          className="h-9"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(full);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            } catch {
+              setCopied(false);
+            }
+          }}
+        >
+          {copied ? "Copiado" : "Copiar"}
+        </Button>
+        {showText ? (
+          <Button className="h-9" onClick={onVariant} title="Otra frase de cierre del mismo estilo">
+            <Dice size={15} />
+            Otra versión
+          </Button>
+        ) : null}
+        {edited ? (
+          <button type="button" onClick={onReset} className="text-xs text-accent hover:underline">
+            Volver a la plantilla
+          </button>
+        ) : null}
+        {hasAi ? (
+          <Button className="ml-auto h-9" onClick={onAi} busy={aiBusy}>
+            {fromAi ? "Pedir otro a la IA" : "Escribirlo con IA"}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function LotePreview({ texts, opts, brand, formatTouched }: { texts: string[]; opts: ImageOptions; brand: BrandAssets | null; formatTouched: boolean }) {
+function LotePreview({
+  texts,
+  opts,
+  brand,
+  formatTouched,
+  editFor,
+  edited,
+  selected,
+  onPick,
+}: {
+  texts: string[];
+  opts: ImageOptions;
+  brand: BrandAssets | null;
+  formatTouched: boolean;
+  editFor: (i: number) => Edit;
+  edited: (i: number) => boolean;
+  selected: number | null;
+  onPick: (i: number) => void;
+}) {
   if (!texts.length) {
-    return <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-line-strong p-10 text-center text-muted">Aquí verás las primeras imágenes del lote.</div>;
+    return <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-line-strong p-10 text-center text-muted">Aquí verás las imágenes del lote.</div>;
   }
-  const designs = buildProposals(opts, 0, Math.max(4, texts.length));
-  const shown = texts.slice(0, 8);
   return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {shown.map((t, i) => {
-          const r = readText(t);
-          const o = formatTouched ? opts : { ...opts, format: r.suggestedFormat };
-          const s = composeSlides({ text: t, options: o, design: designs[i], brand })[0];
-          return <SlidePreview key={i} spec={s} width={150} className="rounded-lg" />;
-        })}
-      </div>
-      {texts.length > shown.length ? <p className="text-sm text-muted">Y {texts.length - shown.length} más.</p> : null}
+    <div className="grid grid-cols-[repeat(auto-fill,154px)] gap-4 pb-2">
+      {texts.map((t, i) => {
+        const r = readText(t);
+        const o = formatTouched ? opts : { ...opts, format: r.suggestedFormat };
+        const e = editFor(i);
+        const s = composeSlides({ text: t, options: o, design: e.design, sizeScale: e.sizeScale, brand })[0];
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onPick(i)}
+            aria-pressed={selected === i}
+            aria-label={`Frase ${i + 1}: ${getTemplate(e.design.templateId).label}${edited(i) ? " (ajustada)" : ""}`}
+            className={`flex flex-col gap-1.5 rounded-[10px] p-0.5 text-left text-xs transition-shadow ${selected === i ? "text-text ring-2 ring-accent ring-offset-2 ring-offset-ink" : "text-muted hover:text-text"}`}
+          >
+            <SlidePreview spec={s} width={150} className="rounded-lg" />
+            <span className="flex items-center justify-between gap-1 px-0.5">
+              <span className="truncate">
+                {i + 1} · {getTemplate(e.design.templateId).label}
+              </span>
+              {edited(i) ? <span className="flex-none rounded-full border border-accent/50 px-1.5 text-[10px] text-accent">ajustada</span> : null}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1100,3 +1352,15 @@ function PatternTune({
     </div>
   );
 }
+
+const IMAGE_SHORTCUTS: ShortcutGroup[] = [
+  {
+    title: "Propuestas",
+    items: [
+      { keys: ["←", "→"], label: "Propuesta anterior o siguiente" },
+      { keys: ["R"], label: "Un diseño al azar" },
+      { keys: ["Ctrl", "Z"], label: "Volver al diseño anterior" },
+    ],
+  },
+  { title: "Ayuda", items: [{ keys: ["?"], label: "Abrir o cerrar este panel" }] },
+];

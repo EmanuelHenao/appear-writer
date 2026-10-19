@@ -2,12 +2,24 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Minus, Plus } from "@/components/icons";
+import { ChevronDown, ChevronLeft, ChevronRight, Minus, Plus } from "@/components/icons";
+import { BottomSheet } from "@/components/BottomSheet";
+import { OwnPhotos } from "@/components/OwnPhotos";
+import { useMedia } from "@/components/useWidth";
+import { Shortcuts, type ShortcutGroup } from "@/components/Shortcuts";
+import { SpellCheck } from "./SpellCheck";
+import { ContentStep, editsLine } from "./ContentStep";
+import { MessageInspector } from "./MessageInspector";
+import { SuggestPanel } from "./SuggestPanel";
 import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
 import { Button, Check, Choice, Notice, Section, SuggestDot, TextInput, saveBlob } from "@/components/ui";
 import { useSettings } from "@/components/useSettings";
 import { describeSource, type Source } from "@/book/model";
-import { BOOK_PALETTES, COVERS, PAGE_SIZES, suggestedBookOptions, type BookOptions } from "@/book/options";
+import { BOOK_PALETTES, bookPalette, CHAPTER_RULES, chapterRuleOf, COVERS, PAGE_SIZES, suggestedBookOptions, type BookOptions } from "@/book/options";
+import { emptyEdits, type BookEdits } from "@/book/edits";
+import { buildRows, editsSummary } from "@/book/rows";
+import { suggestEdits } from "@/book/suggest";
+import type { AiResults } from "@/book/structure";
 import { BOOK_FONT_CHOICES, FONTS, fontStack } from "@/design/fonts";
 import type { PhotoRef } from "@/design/spec";
 
@@ -15,8 +27,9 @@ interface Book {
   id: string;
   sources: Source[];
   options: BookOptions;
-  ai: { chapterTitles?: Record<string, string>; corrections?: Record<string, string>; breaks?: Record<string, unknown>; titleSuggestion?: { titulo: string; subtitulo: string }; coverReason?: string };
+  ai: AiResults & { titleSuggestion?: { titulo: string; subtitulo: string }; coverReason?: string };
   stock: { query: string; photos: PhotoRef[] };
+  edits: BookEdits;
   lastPages?: number;
 }
 
@@ -41,16 +54,31 @@ export function BookStudio() {
   const [pages, setPages] = useState<number | null>(null);
   // Visor de la vista previa (lo maneja el propio documento del libro).
   const frame = useRef<HTMLIFrameElement>(null);
-  const wanted = useRef<{ cols: 1 | 2; zoom: number }>({ cols: 2, zoom: 0 });
-  const [view, setView] = useState({ cols: 2 as 1 | 2, zoom: 1, fit: true, page: 1 });
+  const wanted = useRef<{ cols: 1 | 2; zoom: number; page: number }>({ cols: 2, zoom: 0, page: 1 });
+  const [view, setView] = useState({ cols: 2 as 1 | 2, zoom: 1, fit: true, page: 1, total: 0 });
   const [shown, setShown] = useState(0);
   const [paste, setPaste] = useState({ open: false, text: "", title: "" });
   const [drag, setDrag] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Paso Contenido: el bloque elegido, el panel de la columna izquierda y el historial para deshacer.
+  const [selected, setSelected] = useState<string | null>(null);
+  const [panel, setPanel] = useState<"lista" | "ficha" | "sugerencias">("lista");
+  const [pickPage, setPickPage] = useState<number | null>(null);
+  // Paso Contenido plegado: la lista puede ser muy larga hasta llegar a las opciones.
+  const [contentFolded, setContentFolded] = useState(false);
+  // Fuentes cargadas en la vista previa: si el texto con formato pide otra, hay que recargarla entera.
+  const loadedFonts = useRef("");
+  const patching = useRef<{ running: boolean; again: boolean }>({ running: false, again: false });
+  const selectedRef = useRef<string | null>(null);
+  const editsRef = useRef<BookEdits>(emptyEdits());
+  const history = useRef<{ edits: BookEdits; tag?: string; at: number }[]>([]);
+  const editsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const hasAi = !!settings?.ai.resolved;
+  // En pantallas pequeñas la ficha y las sugerencias van en una hoja que sube desde abajo.
+  const wide = useMedia("(min-width: 1024px)");
   const hasPhotos = !!settings && (settings.photos.unsplash || settings.photos.pexels);
 
   // Carga el libro de ?id= o el último abierto.
@@ -64,8 +92,11 @@ export function BookStudio() {
     fetch(`/api/books/${id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((b: Book | null) => {
-        if (b) setBook(b);
-        else safeSet(LAST_KEY, "");
+        if (b) {
+          editsRef.current = b.edits ?? emptyEdits();
+          if (safeGet(FOLD_KEY)) setContentFolded(true);
+          setBook({ ...b, edits: editsRef.current });
+        } else safeSet(LAST_KEY, "");
       })
       .finally(() => setLoading(false));
   }, []);
@@ -73,22 +104,41 @@ export function BookStudio() {
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow) return;
+      const win = frame.current.contentWindow;
       if (e.data?.type === "book-ready") {
         setPages(e.data.pages);
-        // La vista elegida se mantiene al recargar la vista previa.
+        loadedFonts.current = runFonts(editsRef.current);
+        // La vista elegida y el bloque elegido se mantienen al recargar la vista previa.
         const w = wanted.current;
-        if (w.cols !== 2 || w.zoom) frame.current.contentWindow?.postMessage({ type: "book-control", cols: w.cols, zoom: w.zoom }, "*");
+        if (w.cols !== 2 || w.zoom) win?.postMessage({ type: "book-control", cols: w.cols, zoom: w.zoom }, "*");
+        if (selectedRef.current) win?.postMessage({ type: "book-control", focus: selectedRef.current }, "*");
+        else if (w.page > 1) win?.postMessage({ type: "book-control", goto: w.page }, "*");
       }
       if (e.data?.type === "book-view") {
         setShown(e.data.shown);
-        setView({ cols: e.data.cols, zoom: e.data.zoom, fit: wanted.current.zoom === 0, page: e.data.page });
+        wanted.current.page = e.data.page;
+        setView({ cols: e.data.cols, zoom: e.data.zoom, fit: wanted.current.zoom === 0, page: e.data.page, total: e.data.total ?? e.data.shown });
       }
+      if (e.data?.type === "book-key" && typeof e.data.key === "string") {
+        const d = e.data;
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: d.key, ctrlKey: d.ctrl, metaKey: d.meta, shiftKey: d.shift, altKey: d.alt }));
+      }
+      if (e.data?.type === "book-pick" && typeof e.data.key === "string") {
+        selectedRef.current = e.data.key;
+        setSelected(e.data.key);
+        setPanel("ficha");
+        setPickPage(e.data.page || null);
+        toTop();
+      }
+      // Si aún no está (una página recién añadida), aparece en cuanto se actualice la vista previa.
+      if (e.data?.type === "book-focus" && e.data.key === selectedRef.current && e.data.found) setPickPage(e.data.page || null);
+      if (e.data?.type === "book-patched") setPages(e.data.pages);
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
   }, []);
 
-  function control(msg: { cols?: 1 | 2; zoom?: number; goto?: number }) {
+  function control(msg: { cols?: 1 | 2; zoom?: number; goto?: number; focus?: string | null }) {
     if (msg.cols) wanted.current.cols = msg.cols;
     if (msg.zoom !== undefined) wanted.current.zoom = msg.zoom;
     frame.current?.contentWindow?.postMessage({ type: "book-control", ...msg }, "*");
@@ -97,11 +147,21 @@ export function BookStudio() {
   const suggested = useMemo(() => (book ? suggestedBookOptions(book.sources) : null), [book]);
   const hasChats = !!book?.sources.some((s) => s.kind === "whatsapp");
   const hasImages = !!book?.sources.some((s) => (s.meta.images ?? 0) > 0);
+  const edits = book?.edits ?? emptyEdits();
+  const rows = useMemo(() => (book ? buildRows(book.sources, book.options, book.ai, book.edits ?? emptyEdits()) : []), [book]);
+  const items = useMemo(() => rows.filter((r) => r.kind !== "chapter"), [rows]);
+  const suggestions = useMemo(() => (book ? suggestEdits(book.sources, book.edits ?? emptyEdits()) : []), [book]);
+  const participants = useMemo(() => Array.from(new Set(book?.sources.flatMap((s) => s.meta.participants ?? []) ?? [])), [book]);
+  const palette = useMemo(() => {
+    const p = bookPalette(book?.options.palette ?? "verde-oro");
+    return { ink: p.ink, accent: p.accent, deep: p.deep, muted: p.muted };
+  }, [book?.options.palette]);
 
   async function ensureBook(): Promise<Book> {
     if (book) return book;
     const res = await fetch("/api/books", { method: "POST" });
     const b = await res.json();
+    editsRef.current = b.edits ?? emptyEdits();
     setBook(b);
     safeSet(LAST_KEY, b.id);
     return b;
@@ -121,6 +181,7 @@ export function BookStudio() {
       const res = await fetch(`/api/books/${b.id}/sources`, { method: "POST", body: form });
       const data = await res.json();
       if (data.book) {
+        editsRef.current = data.book.edits ?? editsRef.current;
         setBook(data.book);
         safeSet(LAST_KEY, data.book.id);
         setVersion((v) => v + 1);
@@ -141,12 +202,116 @@ export function BookStudio() {
       const res = await fetch(`/api/books/${book.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await res.json();
       if (res.ok) {
-        setBook(data);
+        // Las ediciones de contenido se guardan por su lado: no se pisan con la respuesta.
+        setBook({ ...data, edits: editsRef.current });
         setVersion((v) => v + 1);
       } else setMsg({ tone: "error", text: data.error });
     },
     [book],
   );
+
+  /**
+   * Actualiza la vista previa sin recargarla: pide las secciones del libro y
+   * el documento repagina solo las que cambiaron. Las peticiones no se pisan.
+   */
+  const refreshPreview = useCallback(async (id: string) => {
+    const fonts = runFonts(editsRef.current);
+    if (fonts !== loadedFonts.current) {
+      loadedFonts.current = fonts;
+      setVersion((v) => v + 1);
+      return;
+    }
+    const q = patching.current;
+    if (q.running) {
+      q.again = true;
+      return;
+    }
+    q.running = true;
+    try {
+      do {
+        q.again = false;
+        const res = await fetch(`/api/books/${id}/preview?formato=secciones`);
+        if (!res.ok) break;
+        const { segments } = await res.json();
+        frame.current?.contentWindow?.postMessage({ type: "book-control", patch: segments }, "*");
+      } while (q.again);
+    } finally {
+      q.running = false;
+    }
+  }, []);
+
+  const saveEdits = useCallback(async (id: string, edits: BookEdits) => {
+    const res = await fetch(`/api/books/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ edits }) });
+    if (!res.ok) {
+      setMsg({ tone: "error", text: (await res.json().catch(() => ({}))).error ?? "No se pudo guardar." });
+      return;
+    }
+    if (editsRef.current === edits) void refreshPreview(id);
+  }, [refreshPreview]);
+
+
+
+  /** Cambia el contenido al momento y lo guarda medio segundo después. `tag` agrupa las pulsaciones al escribir para deshacer. */
+  const setEdits = useCallback(
+    (next: BookEdits, tag?: string) => {
+      if (!book) return;
+      const h = history.current;
+      const last = h[h.length - 1];
+      const now = Date.now();
+      if (!(tag && last?.tag === tag && now - last.at < 1500)) h.push({ edits: editsRef.current, tag, at: now });
+      else last.at = now;
+      if (h.length > 100) h.shift();
+      editsRef.current = next;
+      setBook((b) => (b ? { ...b, edits: next } : b));
+      if (editsTimer.current) clearTimeout(editsTimer.current);
+      editsTimer.current = setTimeout(() => void saveEdits(book.id, next), 500);
+    },
+    [book, saveEdits],
+  );
+
+  const undo = useCallback(() => {
+    const prev = history.current.pop();
+    if (!prev || !book) return false;
+    editsRef.current = prev.edits;
+    setBook((b) => (b ? { ...b, edits: prev.edits } : b));
+    if (editsTimer.current) clearTimeout(editsTimer.current);
+    editsTimer.current = setTimeout(() => void saveEdits(book.id, prev.edits), 300);
+    return true;
+  }, [book, saveEdits]);
+
+  // Ctrl+Z deshace la última decisión del paso Contenido (al escribir, deshace el texto como siempre).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== "z") return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName))) return;
+      if (undo()) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo]);
+
+  function openItem(key: string | null) {
+    selectedRef.current = key;
+    setSelected(key);
+    if (key) {
+      setPanel("ficha");
+      setPickPage(null);
+      toTop();
+    }
+    control({ focus: key });
+  }
+
+  function foldContent(folded: boolean) {
+    setContentFolded(folded);
+    safeSet(FOLD_KEY, folded ? "1" : "");
+  }
+
+  function closePanel() {
+    setPanel("lista");
+    openItem(null);
+    requestAnimationFrame(() => document.getElementById("paso-2")?.scrollIntoView({ block: "start" }));
+  }
 
   /** Cambia una opción al momento y la guarda medio segundo después. */
   function setOptions(next: BookOptions) {
@@ -169,7 +334,7 @@ export function BookStudio() {
       const res = await fetch(`/api/books/${book.id}/ai`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ step }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setBook(data);
+      setBook({ ...data, edits: editsRef.current });
       setVersion((v) => v + 1);
       setMsg({ tone: "ok", text: "Listo. Revisa el resultado en la vista previa; desmarca la casilla para quitarlo." });
     } catch (e) {
@@ -198,7 +363,8 @@ export function BookStudio() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       const photos: PhotoRef[] = data.results.slice(0, 12).map((r: PhotoRef) => ({ url: r.url, thumb: r.thumb, credit: r.credit, creditUrl: r.creditUrl, source: r.source }));
-      await patch({ stock: { query: q, photos } });
+      // Tus fotos subidas se conservan; las del banco se cambian por las nuevas.
+      await patch({ stock: { query: q, photos: [...book.stock.photos.filter((p) => p.source === "subida"), ...photos].slice(0, 40) } });
       if (o && !o.content.stockPhotos) setOptions({ ...o, content: { ...o.content, stockPhotos: true } });
     } catch (e) {
       setMsg({ tone: "error", text: (e as Error).message });
@@ -209,6 +375,11 @@ export function BookStudio() {
 
   async function generate() {
     if (!book || !o) return;
+    if (editsTimer.current) {
+      clearTimeout(editsTimer.current);
+      editsTimer.current = null;
+      await saveEdits(book.id, editsRef.current);
+    }
     const formats = (["pdf", "epub", "png"] as const).filter((f) => o.outputs[f]);
     if (!formats.length) {
       setMsg({ tone: "error", text: "Marca al menos un formato de salida." });
@@ -238,6 +409,10 @@ export function BookStudio() {
 
   function newBook() {
     safeSet(LAST_KEY, "");
+    editsRef.current = emptyEdits();
+    history.current = [];
+    openItem(null);
+    setPanel("lista");
     setBook(null);
     setPages(null);
     setMsg(null);
@@ -257,10 +432,18 @@ export function BookStudio() {
         .join(" · ")
     : "";
 
+  const sum = editsSummary(edits);
+  const touched = sum.hidden + sum.highlighted + sum.inserts + sum.chapters + sum.edited > 0;
   const steps: Step[] = [
     { id: "paso-1", label: "Fuentes", done: hasSources, current: !hasSources },
-    { id: "paso-2", label: "Opciones del libro", current: hasSources },
+    { id: "paso-2", label: "Contenido", done: touched, current: hasSources && panel !== "lista", onGo: () => contentFolded && foldContent(false) },
+    { id: "paso-3", label: "Opciones", current: hasSources && panel === "lista" },
   ];
+  const index = selected ? items.findIndex((r) => r.key === selected) : -1;
+  const blockOf = (key: string) => {
+    const [src, i] = [key.slice(0, key.lastIndexOf(":")), Number(key.slice(key.lastIndexOf(":") + 1))];
+    return book?.sources.find((x) => x.id === src)?.blocks[i] ?? null;
+  };
 
   const footer = (
     <div className="flex flex-col gap-2">
@@ -394,9 +577,57 @@ export function BookStudio() {
         ) : null}
       </section>
 
-      {/* Paso 2 · Opciones */}
-      <section id="paso-2" className="flex scroll-mt-4 flex-col">
-        <StepHead label="Paso 2 · Opciones">
+      {/* Paso 2 · Contenido */}
+      {book && hasSources ? (
+        <section id="paso-2" className="flex scroll-mt-4 flex-col gap-2">
+          <StepHead label="Paso 2 · Contenido">
+            <span className="flex items-center gap-3">
+              {touched ? (
+                <button type="button" onClick={() => undo()} className="text-xs text-accent hover:underline">
+                  Deshacer
+                </button>
+              ) : null}
+              <button type="button" onClick={() => foldContent(!contentFolded)} aria-expanded={!contentFolded} aria-controls="contenido-lista" className="flex items-center gap-1 text-xs text-muted hover:text-white">
+                {contentFolded ? "Desplegar" : "Plegar"}
+                <ChevronDown className={`transition-transform ${contentFolded ? "" : "rotate-180"}`} />
+              </button>
+            </span>
+          </StepHead>
+          {contentFolded ? (
+            <button type="button" onClick={() => foldContent(false)} className="flex flex-wrap gap-x-2 rounded-lg border border-line px-3 py-2.5 text-left text-xs text-muted hover:border-line-strong hover:text-white">
+              {editsLine(rows, edits).map((s, i) => (
+                <span key={s}>
+                  {i ? "· " : ""}
+                  {s}
+                </span>
+              ))}
+            </button>
+          ) : (
+          <div id="contenido-lista">
+          <ContentStep
+            rows={rows}
+            edits={edits}
+            participants={participants}
+            selected={selected}
+            suggestions={{
+              hide: suggestions.filter((x) => x.kind === "ocultar" && x.suggested).reduce((a, x) => a + x.keys.length, 0),
+              highlight: suggestions.filter((x) => x.kind === "destacar" && x.suggested).reduce((a, x) => a + x.keys.length, 0),
+            }}
+            onOpen={(k) => openItem(k)}
+            onChange={(next) => setEdits(next)}
+            onSuggest={() => {
+              setPanel("sugerencias");
+              toTop();
+            }}
+          />
+          </div>
+          )}
+        </section>
+      ) : null}
+
+      {/* Paso 3 · Opciones */}
+      <section id="paso-3" className="flex scroll-mt-4 flex-col">
+        <StepHead label="Paso 3 · Opciones">
           {o && hasSources ? (
             <span className="flex items-center gap-3">
               <button type="button" onClick={() => patch({ resetOptions: true })} className="text-xs text-accent hover:underline">
@@ -526,9 +757,40 @@ export function BookStudio() {
                         </label>
                       ) : null}
                     </fieldset>
-                    <Check id="c-month" checked={o.content.chaptersByMonth} onChange={(v) => upContent({ chaptersByMonth: v })} suggested={S(true, sug?.content.chaptersByMonth)}>
-                      Un capítulo por mes
-                    </Check>
+                    <fieldset className="col-span-2 flex flex-col gap-2">
+                      <legend className="mb-1 text-sm text-muted">Capítulos</legend>
+                      <div className="grid grid-cols-2 gap-2">
+                        {CHAPTER_RULES.map((r) => (
+                          <Choice
+                            key={r.id}
+                            name="caprule"
+                            value={r.id}
+                            checked={chapterRuleOf(o) === r.id}
+                            suggested={sug ? chapterRuleOf(sug) === r.id : false}
+                            onSelect={() => upContent({ chapterRule: r.id, chaptersByMonth: r.id === "mes" })}
+                          >
+                            <span className="block text-sm">{r.label}</span>
+                            <span className="block text-xs text-muted">{r.hint}</span>
+                          </Choice>
+                        ))}
+                      </div>
+                      {chapterRuleOf(o) === "silencio" ? (
+                        <label className="flex items-center gap-2 text-sm">
+                          <span className="text-muted">Nuevo capítulo tras</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={o.content.silenceDays}
+                            onChange={(e) => upContent({ silenceDays: Math.max(1, Math.min(365, Number(e.target.value) || 1)) })}
+                            className="h-9 w-20 rounded-lg border border-line bg-ink px-2 text-center font-mono"
+                            aria-label="Días de silencio"
+                          />
+                          <span className="text-muted">días sin mensajes</span>
+                          {o.content.silenceDays === 14 ? <SuggestDot /> : null}
+                        </label>
+                      ) : null}
+                    </fieldset>
                     <Check id="c-name" checked={o.content.showName} onChange={(v) => upContent({ showName: v })} suggested={S(true, sug?.content.showName)}>
                       Nombre de quien escribe
                     </Check>
@@ -563,19 +825,36 @@ export function BookStudio() {
               </label>
             </Section>
 
-            <Section title="Imágenes" summary={[o.content.chatPhotos && "Fotos del chat", o.content.stockPhotos && "Fotos de banco"].filter(Boolean).join(" · ") || "Solo texto"} suggested={o.content.chatPhotos === sug?.content.chatPhotos && o.content.stockPhotos === sug?.content.stockPhotos}>
+            <Section title="Ortografía" summary={Object.keys(o.fixes).length ? `${Object.keys(o.fixes).length} correcciones` : "Sin IA · sin revisar"}>
+              <SpellCheck bookId={book.id} fixes={o.fixes} onApply={(fixes) => setOptions({ ...o, fixes })} />
+            </Section>
+
+            <Section title="Imágenes" summary={[o.content.chatPhotos && "Fotos del chat", o.content.stockPhotos && "Fotos en capítulos"].filter(Boolean).join(" · ") || "Solo texto"} suggested={o.content.chatPhotos === sug?.content.chatPhotos && o.content.stockPhotos === sug?.content.stockPhotos}>
               <div className="grid grid-cols-2 gap-2.5">
                 <Check id="i-chat" checked={o.content.chatPhotos} disabled={!hasImages} onChange={(v) => upContent({ chatPhotos: v })} suggested={S(true, sug?.content.chatPhotos)} hint={!hasImages ? "Sube el .zip del chat para tener fotos" : undefined}>
                   Fotos del chat
                 </Check>
-                <Check id="i-stock" checked={o.content.stockPhotos} disabled={!hasPhotos || !book.stock.photos.length} onChange={(v) => upContent({ stockPhotos: v })} hint={!hasPhotos ? "Necesita key de Unsplash o Pexels" : "En cada apertura de capítulo"}>
-                  Fotos reales de banco
+                <Check id="i-stock" checked={o.content.stockPhotos} disabled={!book.stock.photos.length} onChange={(v) => upContent({ stockPhotos: v })} hint={book.stock.photos.length ? `${book.stock.photos.length} elegidas, una por capítulo` : "Elige o sube fotos abajo"}>
+                  Fotos en los capítulos
                 </Check>
                 <Check id="i-none" checked={!o.content.chatPhotos && !o.content.stockPhotos} onChange={(v) => v && upContent({ chatPhotos: false, stockPhotos: false })}>
                   Solo texto
                 </Check>
               </div>
-              {hasPhotos ? <StockSearch book={book} busy={busy === "stock"} onSearch={searchStock} /> : null}
+              <div className="flex flex-col gap-3 rounded-xl border border-line bg-ink/40 p-3 text-sm">
+                <OwnPhotos
+                  multiple
+                  title="Tus fotos para las aperturas de capítulo"
+                  selected={book.stock.photos.map((p) => p.url)}
+                  onToggle={(p, on) => {
+                    const photos = on ? [...book.stock.photos.filter((x) => x.url !== p.url), p] : book.stock.photos.filter((x) => x.url !== p.url);
+                    void patch({ stock: { query: book.stock.query, photos: photos.slice(0, 40) } }).then(() => {
+                      if (on && !o.content.stockPhotos) setOptions({ ...o, content: { ...o.content, stockPhotos: true } });
+                    });
+                  }}
+                />
+                {hasPhotos ? <StockSearch book={book} busy={busy === "stock"} onSearch={searchStock} /> : null}
+              </div>
             </Section>
 
             <Section title="Ayuda de la IA" summary={aiOn ? `${aiOn} ${aiOn === 1 ? "activa" : "activas"}` : "Apagada"}>
@@ -624,94 +903,180 @@ export function BookStudio() {
     </>
   );
 
-  const pageLabel = !shown ? "" : view.cols === 2 && view.page > 1 ? `${view.page}–${Math.min(view.page + 1, shown)}` : String(view.page);
+  // La vista previa recorre todo el libro: los números de página son los reales.
+  const total = view.total || shown;
+  const pairs = view.cols === 2 && view.page > 1 && view.page < total;
+  const pageLabel = !shown ? "" : pairs ? `${view.page}–${view.page + 1}` : String(view.page);
   const step = (dir: 1 | -1) => {
     const p = view.page;
-    const next =
-      view.cols === 1 ? p + dir : dir === 1 ? (p === 1 ? 2 : p + 2) : p <= 2 ? 1 : p - 2;
-    control({ goto: Math.max(1, Math.min(shown, next)) });
+    const next = view.cols === 1 ? p + dir : dir === 1 ? (p === 1 ? 2 : p + 2) : p <= 2 ? 1 : p - 2;
+    control({ goto: Math.max(1, Math.min(total, next)) });
   };
 
+  const asideNow =
+    book && panel === "ficha" && selected ? (
+      <MessageInspector
+        bookId={book.id}
+        itemKey={selected}
+        block={selected.startsWith("ins:") ? null : blockOf(selected)}
+        edits={edits}
+        onChange={setEdits}
+        palette={palette}
+        baseFont={fontStack(book.options.font)}
+        page={pickPage}
+        position={{ index: Math.max(0, index), total: items.length }}
+        onPrev={() => index > 0 && openItem(items[index - 1].key)}
+        onNext={() => index >= 0 && index < items.length - 1 && openItem(items[index + 1].key)}
+        onClose={closePanel}
+        onOpen={(k) => openItem(k)}
+      />
+    ) : book && panel === "sugerencias" ? (
+      <SuggestPanel
+        suggestions={suggestions}
+        rows={rows}
+        edits={edits}
+        onClose={() => setPanel("lista")}
+        onApply={(next) => {
+          setEdits(next);
+          setPanel("lista");
+          setMsg({ tone: "ok", text: "Sugerencias aplicadas. Ctrl+Z las deshace." });
+        }}
+      />
+    ) : (
+      aside
+    );
+
+  const sheet = !wide && panel !== "lista" && asideNow !== aside;
+
   return (
-    <StudioLayout
-      steps={steps}
-      navExtra={
-        <Link href="/galeria" className="text-accent hover:underline">
-          Libros guardados
-        </Link>
-      }
-      aside={aside}
-      footer={footer}
-    >
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="eyebrow">Paso 3 · Vista previa{pages ? ` · ${pages.toLocaleString("es")} págs.` : ""}</div>
-          <h2 className="mt-1 font-display text-xl font-bold">{o?.cover.title || "Tu libro"}</h2>
-        </div>
-        {hasSources ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <div role="group" aria-label="Vista" className="flex gap-0.5 rounded-lg bg-panel p-[3px] text-[13px]">
-              {([1, 2] as const).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-pressed={view.cols === c}
-                  onClick={() => control({ cols: c })}
-                  className={`rounded-md px-3 py-1.5 ${view.cols === c ? "bg-panel-2 text-text" : "text-muted hover:text-text"}`}
-                >
-                  {c === 1 ? "Página" : "Doble página"}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center">
-              <IconBtn label="Página anterior" disabled={view.page <= 1} onClick={() => step(-1)}>
-                <ChevronLeft />
-              </IconBtn>
-              <span
-                className="min-w-20 text-center font-mono text-xs tabular-nums"
-                title={pages && shown && pages > shown ? `La vista previa muestra las primeras ${shown} de ${pages} páginas` : undefined}
-              >
-                {pageLabel} / {shown || "…"}
-              </span>
-              <IconBtn label="Página siguiente" disabled={!shown || (view.cols === 2 && view.page > 1 ? view.page + 1 : view.page) >= shown} onClick={() => step(1)}>
-                <ChevronRight />
-              </IconBtn>
-            </div>
-            <div className="flex items-center">
-              <IconBtn label="Alejar" onClick={() => control({ zoom: Math.max(0.2, view.zoom / 1.25) })}>
-                <Minus />
-              </IconBtn>
-              <button
-                type="button"
-                onClick={() => control({ zoom: 0 })}
-                title="Ajustar a la ventana"
-                className={`h-7 min-w-14 rounded-md px-1.5 font-mono text-xs tabular-nums hover:bg-panel-2 ${view.fit ? "text-muted" : "text-text"}`}
-              >
-                {view.fit ? "Ajustar" : `${Math.round(view.zoom * 100)}%`}
-              </button>
-              <IconBtn label="Acercar" onClick={() => control({ zoom: Math.min(3, view.zoom * 1.25) })}>
-                <Plus />
-              </IconBtn>
-            </div>
+    <>
+      <StudioLayout
+        steps={steps}
+        navExtra={
+          <span className="flex items-center gap-2">
+            <Shortcuts groups={BOOK_SHORTCUTS} />
+            <Link href="/galeria" className="text-accent hover:underline">
+              Libros guardados
+            </Link>
+          </span>
+        }
+        aside={sheet ? aside : asideNow}
+        footer={footer}
+        stickyPreview={hasSources}
+      >
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="eyebrow">Vista previa{pages ? ` · ${pages.toLocaleString("es")} págs.` : ""}</div>
+            <h2 className="mt-1 font-display text-xl font-bold max-lg:hidden">{o?.cover.title || "Tu libro"}</h2>
           </div>
-        ) : null}
-      </div>
-      <div className="min-h-[520px] flex-1 overflow-hidden rounded-2xl bg-panel lg:min-h-0">
-        {hasSources && book ? (
-          <iframe ref={frame} key={version} title="Vista previa del libro" src={`/api/books/${book.id}/preview?limite=40&v=${version}`} className="h-full min-h-[520px] w-full border-0 lg:min-h-0" />
-        ) : (
-          <div className="flex h-full min-h-[520px] items-center justify-center p-10 text-center text-muted">Aquí aparecerán las páginas de tu libro, a doble página.</div>
-        )}
-      </div>
-    </StudioLayout>
+          {hasSources ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <div role="group" aria-label="Vista" className="flex gap-0.5 rounded-lg bg-panel p-[3px] text-[13px]">
+                {([1, 2] as const).map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={view.cols === c}
+                    onClick={() => control({ cols: c })}
+                    className={`rounded-md px-3 py-1.5 ${view.cols === c ? "bg-panel-2 text-text" : "text-muted hover:text-text"}`}
+                  >
+                    {c === 1 ? "Página" : "Doble página"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center">
+                <IconBtn label="Página anterior" disabled={view.page <= 1} onClick={() => step(-1)}>
+                  <ChevronLeft />
+                </IconBtn>
+                <span
+                  className="min-w-20 text-center font-mono text-xs tabular-nums"
+                  title={pages && shown && pages > shown ? `La vista previa muestra las primeras ${shown} de ${pages} páginas` : undefined}
+                >
+                  {pageLabel} / {total || "…"}
+                </span>
+                <IconBtn label="Página siguiente" disabled={!shown || (pairs ? view.page + 1 : view.page) >= total} onClick={() => step(1)}>
+                  <ChevronRight />
+                </IconBtn>
+              </div>
+              <div className="flex items-center">
+                <IconBtn label="Alejar" onClick={() => control({ zoom: Math.max(0.2, view.zoom / 1.25) })}>
+                  <Minus />
+                </IconBtn>
+                <button
+                  type="button"
+                  onClick={() => control({ zoom: 0 })}
+                  title="Ajustar a la ventana"
+                  className={`h-7 min-w-14 rounded-md px-1.5 font-mono text-xs tabular-nums hover:bg-panel-2 ${view.fit ? "text-muted" : "text-text"}`}
+                >
+                  {view.fit ? "Ajustar" : `${Math.round(view.zoom * 100)}%`}
+                </button>
+                <IconBtn label="Acercar" onClick={() => control({ zoom: Math.min(3, view.zoom * 1.25) })}>
+                  <Plus />
+                </IconBtn>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div id="book-preview" className={`flex-1 overflow-hidden rounded-2xl bg-panel lg:min-h-0 ${hasSources ? "max-lg:h-[40vh] max-lg:flex-none" : "min-h-[520px]"}`}>
+          {hasSources && book ? (
+            <iframe
+              ref={frame}
+              key={version}
+              title="Vista previa del libro"
+              src={`/api/books/${book.id}/preview?limite=40&v=${version}`}
+              className="h-full w-full border-0"
+            />
+          ) : (
+            <div className="flex h-full min-h-[520px] items-center justify-center p-10 text-center text-muted">Aquí aparecerán las páginas de tu libro, a doble página.</div>
+          )}
+        </div>
+      </StudioLayout>
+      {sheet ? (
+        <BottomSheet anchorId="book-preview" label={panel === "ficha" ? "Ficha del mensaje" : "Sugerencias"} onClose={panel === "ficha" ? closePanel : () => setPanel("lista")}>
+          {asideNow}
+        </BottomSheet>
+      ) : null}
+    </>
   );
 }
+
+const BOOK_SHORTCUTS: ShortcutGroup[] = [
+  {
+    title: "Contenido",
+    items: [
+      { keys: ["Clic"], label: "Elegir un mensaje en la vista previa o la lista" },
+      { keys: ["←", "→"], label: "Mensaje anterior o siguiente" },
+      { keys: ["H"], label: "Ocultar o mostrar el mensaje" },
+      { keys: ["D"], label: "Destacar como cita" },
+      { keys: ["Esc"], label: "Volver a la lista" },
+      { keys: ["Ctrl", "Z"], label: "Deshacer la última decisión" },
+      { keys: ["Mayús", "Clic"], label: "Marcar un tramo de la lista" },
+    ],
+  },
+  {
+    title: "Texto con formato",
+    items: [
+      { keys: ["Ctrl", "B"], label: "Negrita" },
+      { keys: ["Ctrl", "I"], label: "Cursiva" },
+      { keys: ["Ctrl", "U"], label: "Subrayado" },
+    ],
+  },
+  {
+    title: "Vista previa",
+    items: [
+      { keys: ["‹", "›"], label: "Página o pliego anterior y siguiente" },
+      { keys: ["−", "+"], label: "Alejar y acercar; «Ajustar» encaja la página" },
+      { keys: ["Miniatura"], label: "Ir a esa página" },
+    ],
+  },
+  { title: "Ayuda", items: [{ keys: ["?"], label: "Abrir o cerrar este panel" }] },
+];
 
 function contentSummary(o: BookOptions, hasChats: boolean): string {
   if (hasChats) {
     const style = o.content.bubbles ? "Burbujas" : o.content.onePerPage ? "Uno por página" : "Seguidos";
-    const meta = [o.content.showName && "nombre", o.content.showDate && "fecha", o.content.showTime && "hora"].filter(Boolean).join(", ");
-    return meta ? `${style} · ${meta}` : style;
+    const rule = CHAPTER_RULES.find((r) => r.id === chapterRuleOf(o))?.label.toLowerCase() ?? "";
+    return `${style} · ${rule}`;
   }
   return [o.content.titlePage && "Portadilla", o.content.toc && "Índice", o.content.ornaments && "Ornamentos"].filter(Boolean).join(" · ") || "Solo el texto";
 }
@@ -760,6 +1125,26 @@ function move(list: Source[], i: number, d: number): string[] {
   [ids[i], ids[j]] = [ids[j], ids[i]];
   return ids;
 }
+
+/** La ficha y las sugerencias empiezan arriba de la columna izquierda. */
+function toTop() {
+  requestAnimationFrame(() => {
+    const el = document.getElementById("studio-aside");
+    if (el) el.scrollTop = 0;
+    const sheet = document.getElementById("sheet-body");
+    if (sheet) sheet.scrollTop = 0;
+  });
+}
+
+/** Las letras que usa el texto con formato (la vista previa las carga al abrirse). */
+function runFonts(edits: BookEdits): string {
+  const set = new Set<string>();
+  for (const e of Object.values(edits.blocks)) for (const r of e.runs ?? []) if (r.font) set.add(r.font);
+  for (const i of edits.inserts) for (const r of i.runs ?? []) if (r.font) set.add(r.font);
+  return [...set].sort().join(",");
+}
+
+const FOLD_KEY = "appear:contenido-plegado";
 
 function safeGet(k: string): string | null {
   try {

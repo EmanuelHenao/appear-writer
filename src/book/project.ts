@@ -1,6 +1,7 @@
 import "server-only";
 import type { PhotoRef } from "@/design/spec";
 import { dataPath, isSafeId, listDirs, newId, readJson, removeDir, writeJson } from "@/lib/storage";
+import { emptyEdits, normalizeEdits, type BookEdits } from "./edits";
 import type { Source } from "./model";
 import { BookOptionsSchema, suggestedBookOptions, type BookOptions } from "./options";
 import type { AiResults } from "./structure";
@@ -15,6 +16,8 @@ export interface BookProject {
   optionsTouched: boolean;
   ai: AiResults & { titleSuggestion?: { titulo: string; subtitulo: string }; coverReason?: string };
   stock: { query: string; photos: PhotoRef[] };
+  /** Lo decidido sobre cada mensaje y las páginas añadidas (paso Contenido). */
+  edits: BookEdits;
   lastPages?: number;
   hasCover?: boolean;
 }
@@ -32,6 +35,7 @@ export async function createBook(): Promise<BookProject> {
     optionsTouched: false,
     ai: {},
     stock: { query: "", photos: [] },
+    edits: emptyEdits(),
   };
   await saveBook(book);
   return book;
@@ -45,6 +49,7 @@ export async function getBook(id: string): Promise<BookProject | null> {
   // Los campos nuevos de versiones posteriores toman su valor por defecto.
   if (parsed.success) b.options = parsed.data;
   else b.options = { ...suggestedBookOptions(b.sources), cover: b.options?.cover ?? suggestedBookOptions(b.sources).cover };
+  b.edits = normalizeEdits(b.edits);
   return b;
 }
 

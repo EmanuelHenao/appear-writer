@@ -6,11 +6,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Source } from "@/book/model";
 import { suggestedBookOptions } from "@/book/options";
 import type { BookProject } from "@/book/project";
-import { bookHtml, exportEpub, exportPdf, exportPngs } from "@/book/service";
+import { bookHtml, exportEpub, exportPdf, exportPngs, previewSegments } from "@/book/service";
 import { parsePlainText } from "@/import/text";
 import { parseWhatsApp } from "@/import/whatsapp";
 import { importFile } from "@/import";
-import { getBrowser } from "@/lib/render/browser";
+import { getBrowser, openDoc } from "@/lib/render/browser";
 import { chatZip } from "./fixtures";
 
 const DATA = path.resolve("test-results/data-book");
@@ -50,6 +50,7 @@ function project(sources: Source[]): BookProject {
     optionsTouched: false,
     ai: {},
     stock: { query: "", photos: [] },
+    edits: { blocks: {}, inserts: [] },
   };
 }
 
@@ -144,6 +145,143 @@ describe("render del libro", () => {
       const out = execFileSync("java", ["-jar", process.env.EPUBCHECK_JAR, file], { encoding: "utf8" });
       expect(out).toMatch(/0 errores fatales \/ 0 errores|0 fatals \/ 0 errors/);
     }
+  });
+
+  it("v6: ocultos, diseños especiales y páginas añadidas en PDF, vista previa y EPUB", async () => {
+    const withPhotos = await importFile("testbook", { name: "Chat de WhatsApp con Ana.zip", data: await chatZip() });
+    const book = project([withPhotos, chatSource()]);
+    const keys = withPhotos.blocks.map((b, i) => ({ b, key: `${withPhotos.id}:${i}` }));
+    const photoMsgs = keys.filter((x) => x.b.type === "message" && x.b.media.length);
+    const textMsgs = keys.filter((x) => x.b.type === "message" && x.b.text && !x.b.media.length);
+    expect(photoMsgs.length).toBeGreaterThanOrEqual(2);
+    const [p1, p2] = photoMsgs;
+    const media = p1.b.type === "message" ? p1.b.media[0] : "";
+    book.edits = {
+      blocks: {
+        [textMsgs[0].key]: { design: "cita", align: "centro" },
+        [textMsgs[1].key]: { hidden: true },
+        [p1.key]: { design: "foto-completa", photoText: "encima" },
+        [p2.key]: { design: "foto-texto" },
+        "chat1:2": { chapter: { title: "Capítulo a mano" } },
+        "chat1:3": { photos: { hidden: [], place: "antes" } },
+      },
+      inserts: [
+        { id: "sep", at: textMsgs[0].key, side: "antes", kind: "separador", title: "El viaje" },
+        { id: "libre", at: textMsgs[0].key, side: "despues", kind: "libre", title: "Una nota", runs: [{ t: "Primer párrafo.\n\nSegundo párrafo." }] },
+        { id: "img", at: "chat1:4", side: "despues", kind: "imagen", fit: "enmarcada", caption: "Pie de foto", photo: { url: `/api/files/books/testbook/media/${encodeURIComponent(media)}` } },
+        { id: "blank", at: "chat1:5", side: "antes", kind: "blanco" },
+      ],
+    };
+    const html = await bookHtml(book, "print");
+    const hiddenText = textMsgs[1].b.type === "message" ? textMsgs[1].b.text : "";
+    expect(html).not.toContain(`data-key="${textMsgs[1].key}"`);
+    expect(html).toContain(`class="cita"`);
+    expect(html).toContain(`class="veil"`);
+    expect(html).toContain(`class="pt-photos n`);
+    expect(html).toContain(`style="text-align:center"`);
+    expect(html).toContain("Capítulo a mano");
+    expect(html).toContain(`class="sep-title">El viaje`);
+    expect(html).toContain("Segundo párrafo.");
+    expect(html).toContain(`data-page-class="blank-page nohead nofolio"`);
+    expect(html).toContain("http://appear.local/data/books/testbook/media/");
+    expect(hiddenText.length).toBeGreaterThan(0);
+
+    const pdf = await exportPdf(book);
+    expect(pdfPages(pdf)).toBe(book.lastPages);
+    if (OUT) {
+      await writeFile(path.join(OUT, "libro-v6.pdf"), pdf);
+      const pngs = await exportPngs(book);
+      for (const [i, png] of pngs.slice(0, 14).entries()) await writeFile(path.join(OUT, `v6-${i + 1}.png`), png);
+    }
+
+    // Vista previa centrada en un mensaje: ventana de páginas alrededor y foco marcado.
+    const preview = await bookHtml(book, "preview", 6, false, "chat1:9");
+    expect(preview).toContain('data-focus="chat1:9"');
+
+    const epub = await exportEpub(book);
+    const zip = await JSZip.loadAsync(epub);
+    const text = (await Promise.all(Object.keys(zip.files).filter((n) => n.endsWith(".xhtml")).map((n) => zip.file(n)!.async("string")))).join("\n");
+    expect(text).toContain('class="cita"');
+    expect(text).toContain("El viaje");
+    expect(text).toContain("Capítulo a mano");
+    expect(text).toContain("Pie de foto");
+    const file = path.join(DATA, "v6.epub");
+    await writeFile(file, epub);
+    if (process.env.EPUBCHECK_JAR) {
+      const out = execFileSync("java", ["-jar", process.env.EPUBCHECK_JAR, file], { encoding: "utf8" });
+      expect(out).toMatch(/0 errores fatales \/ 0 errores|0 fatals \/ 0 errors/);
+    }
+  });
+
+  it("v6: el texto con formato se conserva al partirse entre páginas", async () => {
+    const prose = proseSource();
+    const book = project([prose]);
+    const long = prose.blocks[1].type === "paragraph" ? prose.blocks[1].text : "";
+    const boldLen = long.length - 200;
+    book.edits = {
+      blocks: { [`${prose.id}:1`]: { runs: [{ t: long.slice(0, 100) }, { t: long.slice(100, 100 + boldLen), b: true, font: "lora", color: "accent" }, { t: long.slice(100 + boldLen) }] } },
+      inserts: [],
+    };
+    const html = await bookHtml(book, "print");
+    expect(html).toContain("font-weight:700");
+    expect(html).toContain("lora");
+    const { page, context } = await openDoc({ html, width: 800, height: 1000, scale: 1, media: "print", readySelector: "body[data-ready]" });
+    const bold = await page.evaluate(() => {
+      const spans = Array.from(document.querySelectorAll(".page span[style*='font-weight:700']"));
+      return { pages: new Set(spans.map((s) => s.closest(".page"))).size, chars: spans.reduce((a, s) => a + (s.textContent?.length ?? 0), 0) };
+    });
+    await context.close();
+    // El párrafo ocupa varias páginas y la negrita sigue en todas.
+    expect(bold.pages).toBeGreaterThanOrEqual(2);
+    // Siguen todos los caracteres en negrita, menos los espacios que se recortan al partir.
+    expect(bold.chars).toBeGreaterThan(boldLen - 10);
+  });
+
+  it("v7: al editar, la vista previa repagina solo las secciones que cambian y queda igual que recargada", async () => {
+    const src = chatSource();
+    const book = project([src]);
+    const open = async (html: string) => openDoc({ html, width: 1200, height: 900, scale: 1, media: "screen", readySelector: "body[data-ready]" });
+    const { page, context } = await open(await bookHtml(book, "preview", 6));
+    const before = await page.evaluate(() => (window as unknown as { __BOOK_READY__: { pages: number } }).__BOOK_READY__.pages);
+
+    // Se oculta un mensaje de abril y se añade una página en blanco: cambian el índice y ese capítulo.
+    const april = src.blocks.findIndex((b) => b.type === "message" && b.date?.startsWith("2024-04"));
+    book.edits = {
+      blocks: { [`chat1:${april}`]: { hidden: true } },
+      inserts: [{ id: "b1", at: `chat1:${april + 1}`, side: "antes", kind: "blanco" }],
+    };
+    const segments = await previewSegments(book);
+    const patched = await page.evaluate(
+      (segs) =>
+        new Promise<{ pages: number; changed: number; folios: string[]; toc: string[] }>((resolve) => {
+          window.addEventListener("message", (e) => {
+            if (e.data?.type !== "book-patched") return;
+            const pages = Array.from(document.querySelectorAll("#book > .page"));
+            resolve({
+              pages: e.data.pages,
+              changed: e.data.changed,
+              folios: pages.map((p) => (p as HTMLElement).dataset.n ?? ""),
+              toc: Array.from(document.querySelectorAll("#book .toc-entry .pn")).map((x) => x.textContent ?? ""),
+            });
+          });
+          window.postMessage({ type: "book-control", patch: segs }, "*");
+        }),
+      segments,
+    );
+    await context.close();
+    // Solo se repagina el capítulo de abril; los números del índice los pone el paginador.
+    expect(patched.changed).toBe(1);
+    expect(patched.folios).toEqual(patched.folios.map((_, i) => String(i + 1)));
+
+    const fresh = await open(await bookHtml(book, "preview", 6));
+    const ref = await fresh.page.evaluate(() => ({
+      pages: (window as unknown as { __BOOK_READY__: { pages: number } }).__BOOK_READY__.pages,
+      toc: Array.from(document.querySelectorAll("#book .toc-entry .pn")).map((x) => x.textContent ?? ""),
+    }));
+    await fresh.context.close();
+    expect(patched.pages).toBe(ref.pages);
+    expect(patched.pages).toBe(before);
+    expect(patched.toc).toEqual(ref.toc);
   });
 
   it("la vista previa corta en el límite de páginas", async () => {

@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     }
     const files = pngs.map((data, i) => ({ name: `${base}-${String(i + 1).padStart(2, "0")}.png`, data }));
     if (body.caption) {
-      files.push({ name: "texto.txt", data: Buffer.from(`${body.caption.texto}\n\n${body.caption.hashtags.join(" ")}\n`) });
+      files.push({ name: "texto.txt", data: Buffer.from(`${[body.caption.texto, body.caption.hashtags.join(" ")].filter(Boolean).join("\n\n")}\n`) });
     }
     headers.set("Content-Type", "application/zip");
     headers.set("Content-Disposition", attachment(`${base}-carrusel.zip`));

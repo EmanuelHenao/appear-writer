@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { OwnPhotos } from "@/components/OwnPhotos";
 import { Button, Notice, postJson, TextInput } from "@/components/ui";
 import type { PhotoRef } from "@/design/spec";
 
@@ -15,8 +16,11 @@ export function PhotoPicker({
   photo,
   setPhoto,
   defaultQuery,
+  hasStock,
 }: {
   mode: "foto" | "ia";
+  /** ¿Hay key de Unsplash o Pexels? Sin ella solo se ofrecen tus fotos. */
+  hasStock: boolean;
   text: string;
   photo: PhotoRef | null;
   setPhoto: (p: PhotoRef | null) => void;
@@ -75,7 +79,10 @@ export function PhotoPicker({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-line bg-panel-2 p-3">
+    <div className="flex flex-col gap-3 rounded-xl border border-line bg-ink/40 p-3">
+      <OwnPhotos selected={photo?.source === "subida" ? [photo.url] : []} onToggle={(p, on) => setPhoto(on ? p : null)} />
+      {hasStock ? <span className="text-muted">Bancos de fotos</span> : null}
+      {hasStock ? (
       <form
         className="flex gap-2"
         onSubmit={(e) => {
@@ -88,6 +95,7 @@ export function PhotoPicker({
           Buscar
         </Button>
       </form>
+      ) : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
       {results.length ? (
         <div className="scroll-thin grid max-h-64 grid-cols-3 gap-1.5 overflow-y-auto">
