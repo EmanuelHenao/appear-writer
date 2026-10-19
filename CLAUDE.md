@@ -50,12 +50,14 @@ docker compose up -d --build
   - `fit.ts`: lectura determinista del texto (longitud, formato sugerido, carrusel, destacado).
   - `fonts.ts` y `palettes.ts`: registros (fuentes de @fontsource, paletas con roles fijos).
   - `templates/`: las 12 plantillas como componentes React con estilos en línea; `autofit.ts` ajusta la letra.
-  - `compose.ts`: esquema de opciones (zod), valores sugeridos, propuestas y diapositivas.
+  - `patterns.tsx`: fondos generativos deterministas (semilla → mismo dibujo en vista previa, PNG y plantilla guardada). Cada tipo nuevo va en `PATTERNS` y `PAINTERS`.
+  - `compose.ts`: esquema de opciones (zod), valores sugeridos, propuestas, diseño aleatorio (`randomDesign`) y diapositivas.
+  - `saved.ts`: esquema de «Mis plantillas» (`DATA_DIR/templates.json`, vía `/api/templates`).
 - `src/lib/render/`: Chromium compartido (Playwright). Los documentos se sirven desde un origen virtual (`http://appear.local/`) con fuentes y archivos locales. `image.ts` renderiza las mismas plantillas con `react-dom/server`.
 - `src/lib/ai/`: `detect.ts` detecta el proveedor por la key; `client.ts` usa el SDK oficial de Anthropic (salida estructurada) y HTTP directo para OpenAI/compatibles y Gemini; `tasks.ts` contiene los prompts.
 - `src/import/`: importadores (WhatsApp, texto, docx con mammoth, pdf con unpdf) hacia el modelo `Block` de `src/book/model.ts`.
 - `src/book/`: opciones y paletas del libro, `structure.ts` (capítulos deterministas), `covers.ts`, `html.ts` + `paginate.js.ts` (documento único para vista previa, PDF y PNG; el paginador corre en el navegador), `epub.ts`, `service.ts`.
-- Persistencia en archivos bajo `DATA_DIR` (por defecto `./data`): `settings.json`, `gallery/<id>/`, `books/<id>/book.json` + `media/`. No hay base de datos.
+- Persistencia en archivos bajo `DATA_DIR` (por defecto `./data`): `settings.json`, `templates.json`, `gallery/<id>/`, `books/<id>/book.json` + `media/`. No hay base de datos.
 - Acceso con contraseña única (`APP_PASSWORD`, Basic Auth en `src/proxy.ts`).
 
 ## Convenciones

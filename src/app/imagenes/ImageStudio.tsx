@@ -6,14 +6,26 @@ import { SlidePreview } from "@/components/SlidePreview";
 import { Button, Check, Choice, downloadFrom, Notice, Panel, postJson, Section, SuggestDot, TextInput } from "@/components/ui";
 import { useSettings } from "@/components/useSettings";
 import { useWidth } from "@/components/useWidth";
-import { buildProposals, composeSlides, type BrandAssets, type Design, type ImageOptions, suggestedImageOptions } from "@/design/compose";
+import {
+  buildProposals,
+  composeSlides,
+  ImageOptionsSchema,
+  randomDesign,
+  suggestedImageOptions,
+  type BrandAssets,
+  type Design,
+  type ImageOptions,
+} from "@/design/compose";
 import { LENGTH_LABEL, LIMITS, readText, type FormatId } from "@/design/fit";
 import { FONTS, IMAGE_FONT_CHOICES, fontStack, type FontId } from "@/design/fonts";
-import { PALETTES } from "@/design/palettes";
+import { getPalette, PALETTES } from "@/design/palettes";
+import { INTENSITIES, makePattern, PATTERNS, patternLabel, randomSeed, type Intensity, type PatternDesign, type PatternId } from "@/design/patterns";
 import type { ImageRequest } from "@/design/request";
 import { BACKGROUNDS, FAMILIES, type BackgroundKind, type FamilyId, type PhotoRef } from "@/design/spec";
 import { getTemplate } from "@/design/templates";
+import { PatternPanel } from "./PatternPanel";
 import { PhotoPicker } from "./PhotoPicker";
+import { sameDesign, SavedTemplatesSection, useSavedTemplates } from "./SavedTemplates";
 
 const SAMPLE = "No esperes el momento perfecto. Créalo.";
 
@@ -47,6 +59,7 @@ export function ImageStudio() {
   const reading = useMemo(() => readText(text), [text]);
   const [opts, setOpts] = useState<ImageOptions>(() => suggestedImageOptions(readText(SAMPLE)));
   const [formatTouched, setFormatTouched] = useState(false);
+  const [patternsTouched, setPatternsTouched] = useState(false);
   const [emphasisText, setEmphasisText] = useState<string | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [briefFor, setBriefFor] = useState("");
@@ -54,7 +67,11 @@ export function ImageStudio() {
   const [designs, setDesigns] = useState<Design[] | null>(null);
   const [seed, setSeed] = useState(0);
   const [selected, setSelected] = useState(0);
-  const [edit, setEdit] = useState<Edit | null>(null);
+  const [edit, setEditState] = useState<Edit | null>(null);
+  /** Diseños anteriores del botón «Aleatorio», para volver atrás. */
+  const [history, setHistory] = useState<Design[]>([]);
+  const saved = useSavedTemplates();
+  const [usedSaved, setUsedSaved] = useState<string[]>([]);
   const [photo, setPhoto] = useState<PhotoRef | null>(null);
   const [caption, setCaption] = useState<{ texto: string; hashtags: string[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -91,19 +108,26 @@ export function ImageStudio() {
         if (!item) return;
         const r = item.request;
         setText(r.text);
-        setOpts(r.options);
+        // Los diseños guardados con versiones anteriores reciben los campos nuevos.
+        const parsed = ImageOptionsSchema.safeParse(r.options);
+        setOpts(parsed.success ? parsed.data : r.options);
         setFormatTouched(true);
+        setPatternsTouched(true);
         setEmphasisText(r.emphasis.join(", "));
         setDesigns([r.design]);
         setSelected(0);
-        setEdit({ design: r.design, sizeScale: r.sizeScale, label: r.label ?? "" });
+        setEditState({ design: r.design, sizeScale: r.sizeScale, label: r.label ?? "" });
         setPhoto(r.photo ?? null);
         if (r.caption) setCaption(r.caption);
       });
   }, []);
 
   const suggested = useMemo(() => suggestedImageOptions(reading, { handle: brandHandle }), [reading, brandHandle]);
-  const effective: ImageOptions = formatTouched ? opts : { ...opts, format: suggested.format };
+  const effective: ImageOptions = {
+    ...opts,
+    format: formatTouched ? opts.format : suggested.format,
+    patterns: patternsTouched ? opts.patterns : suggested.patterns,
+  };
   const emphasis = emphasisText === null ? reading.emphasis : emphasisText.split(",").map((s) => s.trim()).filter(Boolean);
   const briefStale = !!brief && briefFor !== reading.text;
 
@@ -126,8 +150,17 @@ export function ImageStudio() {
     }
   }
 
+  // Al ajustar la propuesta elegida, su miniatura cambia también.
+  function setEdit(e: Edit) {
+    setEditState(e);
+    setDesigns((list) => (list ? list.map((d, i) => (i === selected ? e.design : d)) : list));
+  }
+
+  const savedDesigns = saved.list.filter((t) => usedSaved.includes(t.id)).map((t) => t.design);
+  const photoReady = (b: BackgroundKind) => (b !== "foto" && b !== "ia") || !!photo?.url;
+
   function createProposals(nextSeed: number) {
-    const list = buildProposals(effective, nextSeed);
+    const list = buildProposals(effective, nextSeed, 4, savedDesigns);
     // La propuesta de la IA va primero y usa su paleta y fuente, si el usuario no fijó otras.
     if (opts.ai.suggest && brief && !briefStale && nextSeed === 0) {
       list[0] = {
@@ -139,14 +172,65 @@ export function ImageStudio() {
     setSeed(nextSeed);
     setDesigns(list);
     setSelected(0);
-    setEdit({ design: list[0], sizeScale: 1, label: "" });
+    setHistory([]);
+    setEditState({ design: list[0], sizeScale: savedScale(list[0]), label: "" });
     setMessage(null);
+  }
+
+  const savedScale = (d: Design) => saved.list.find((t) => usedSaved.includes(t.id) && sameDesign(t.design, d))?.sizeScale ?? 1;
+
+  /** Cuatro diseños al azar con lo marcado en el panel. */
+  function randomProposals() {
+    const list = Array.from({ length: 4 }, () => randomDesign(effective, randomSeed(), photoReady));
+    setSeed((s) => s + 1);
+    setDesigns(list);
+    setSelected(0);
+    setHistory([]);
+    setEditState({ design: list[0], sizeScale: 1, label: edit?.label ?? "" });
+    setMessage(null);
+  }
+
+  /** Cambia la propuesta elegida por otra al azar; la anterior queda en el historial. */
+  function randomizeSelected() {
+    if (!edit) return;
+    const d = randomDesign(effective, randomSeed(), photoReady);
+    setHistory((h) => [...h.slice(-19), edit.design]);
+    setEdit({ ...edit, design: d, sizeScale: 1 });
+  }
+
+  function undoRandom() {
+    if (!edit || !history.length) return;
+    setEdit({ ...edit, design: history[history.length - 1] });
+    setHistory((h) => h.slice(0, -1));
   }
 
   function pick(i: number) {
     if (!designs) return;
     setSelected(i);
-    setEdit({ design: designs[i], sizeScale: 1, label: edit?.label ?? "" });
+    setHistory([]);
+    setEditState({ design: designs[i], sizeScale: savedScale(designs[i]), label: edit?.label ?? "" });
+  }
+
+  const savedMatch = (d: Design) => saved.list.find((t) => sameDesign(t.design, d));
+
+  async function toggleSaved(i: number) {
+    if (!designs) return;
+    const d = designs[i];
+    const found = savedMatch(d);
+    try {
+      if (found) {
+        await saved.remove(found.id);
+        setUsedSaved((u) => u.filter((x) => x !== found.id));
+        setMessage({ tone: "info", text: `Quitada de tus plantillas: ${found.name}.` });
+      } else {
+        const t = getTemplate(d.templateId);
+        const pat = d.background === "patron" && d.pattern ? ` · ${d.pattern.layers.map(patternLabel).join(" + ")}` : "";
+        const item = await saved.save(`${t.label} · ${getPalette(d.paletteId).label}${pat}`.slice(0, 60), d, i === selected && edit ? edit.sizeScale : 1);
+        setMessage({ tone: "ok", text: `Guardada en «Mis plantillas»: ${item.name}.` });
+      }
+    } catch (e) {
+      setMessage({ tone: "error", text: (e as Error).message });
+    }
   }
 
   const slidesFor = (design: Design, e?: Edit) =>
@@ -442,6 +526,34 @@ export function ImageStudio() {
           </div>
         </Section>
 
+        <PatternPanel
+          value={effective.patterns}
+          suggested={suggested.patterns}
+          active={opts.backgrounds.includes("patron")}
+          onChange={(v) => {
+            setPatternsTouched(true);
+            set("patterns", v);
+          }}
+        />
+
+        <SavedTemplatesSection
+          list={saved.list}
+          used={usedSaved}
+          setUsed={setUsedSaved}
+          preview={(t) =>
+            composeSlides({ text: reading.text || " ", options: effective, design: t.design, sizeScale: t.sizeScale, emphasis, photo, brand })[0]
+          }
+          onRemove={(id) => {
+            void saved.remove(id);
+            setUsedSaved((u) => u.filter((x) => x !== id));
+          }}
+          onRename={(id, name) => void saved.rename(id, name)}
+          onUse={() => {
+            if (mode === "lote") setMode("una");
+            createProposals(0);
+          }}
+        />
+
         <Section title="Marca personal">
           <div className="grid grid-cols-2 gap-2.5">
             <Check id="m-handle" checked={opts.brand.handle} disabled={!brandHandle} onChange={(v) => set("brand", { ...opts.brand, handle: v })} suggested={!!brandHandle} hint={brandHandle || "Sin configurar"}>
@@ -521,32 +633,59 @@ export function ImageStudio() {
         ) : !designs ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-line-strong p-10 text-center">
             <p className="max-w-sm text-muted">Con las opciones del panel se crean cuatro diseños distintos. Después eliges uno y ajustas paleta, letra, tamaño y fondo.</p>
-            <Button variant="primary" onClick={() => createProposals(0)} disabled={!reading.text}>
-              Crear 4 propuestas
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="primary" onClick={() => createProposals(0)} disabled={!reading.text}>
+                Crear 4 propuestas
+              </Button>
+              <Button onClick={randomProposals} disabled={!reading.text}>
+                🎲 4 al azar
+              </Button>
+            </div>
           </div>
         ) : (
           <>
             <div ref={thumbsRef} className="grid grid-cols-4 gap-3">
               {designs.map((d, i) => {
-                const s = slidesFor(d)[0];
+                const s = slidesFor(d, i === selected && edit ? edit : undefined)[0];
+                const isSaved = !!savedMatch(d);
                 return (
-                  <button
-                    key={`${seed}-${i}`}
-                    type="button"
-                    onClick={() => pick(i)}
-                    aria-pressed={selected === i}
-                    aria-label={`Propuesta ${i + 1}: ${getTemplate(d.templateId).label}`}
-                    className={`rounded-[10px] p-0.5 text-left transition-shadow ${selected === i ? "ring-2 ring-accent ring-offset-2 ring-offset-ink" : "opacity-85 hover:opacity-100"}`}
-                  >
-                    <SlidePreview spec={s} width={Math.max(60, Math.floor((thumbsWidth - 36) / 4) - 4)} className="rounded-lg" />
-                    <span className="mt-1.5 block truncate text-xs text-muted">{getTemplate(d.templateId).label}</span>
-                  </button>
+                  <div key={`${seed}-${i}`} className="relative min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => pick(i)}
+                      aria-pressed={selected === i}
+                      aria-label={`Propuesta ${i + 1}: ${getTemplate(d.templateId).label}`}
+                      className={`w-full rounded-[10px] p-0.5 text-left transition-shadow ${selected === i ? "ring-2 ring-accent ring-offset-2 ring-offset-ink" : "opacity-85 hover:opacity-100"}`}
+                    >
+                      <SlidePreview spec={s} width={Math.max(60, Math.floor((thumbsWidth - 36) / 4) - 4)} className="rounded-lg" />
+                      <span className="mt-1.5 block truncate pr-6 text-xs text-muted">
+                        {getTemplate(d.templateId).label}
+                        {d.background === "patron" && d.pattern ? ` · ${d.pattern.layers.map(patternLabel).join(" + ")}` : ""}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void toggleSaved(i)}
+                      aria-pressed={isSaved}
+                      aria-label={isSaved ? "Quitar de mis plantillas" : "Guardar como plantilla"}
+                      title={isSaved ? "Quitar de mis plantillas" : "Guardar como plantilla"}
+                      className={`absolute bottom-0 right-0 px-1 text-base leading-5 ${isSaved ? "text-suggest" : "text-muted hover:text-text"}`}
+                    >
+                      {isSaved ? "★" : "☆"}
+                    </button>
+                  </div>
                 );
               })}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={() => createProposals(seed + 1)}>Crear otras 4</Button>
+              <Button onClick={randomizeSelected} title="Cambia la propuesta elegida por una al azar con lo marcado en el panel">
+                🎲 Aleatorio
+              </Button>
+              <Button onClick={undoRandom} disabled={!history.length} title="Volver al diseño anterior">
+                ↶ Anterior
+              </Button>
+              <Button onClick={randomProposals}>4 al azar</Button>
             </div>
 
             {edit ? (
@@ -579,6 +718,7 @@ export function ImageStudio() {
                   hasPhotos={!!hasPhotos}
                   aiImages={aiImages}
                   photoQuery={brief?.fotoClave ?? ""}
+                  patternDefaults={effective.patterns}
                 />
               </div>
             ) : null}
@@ -655,6 +795,7 @@ function FineTune({
   hasPhotos,
   aiImages,
   photoQuery,
+  patternDefaults,
 }: {
   edit: Edit;
   setEdit: (e: Edit) => void;
@@ -666,9 +807,12 @@ function FineTune({
   hasPhotos: boolean;
   aiImages: boolean;
   photoQuery: string;
+  patternDefaults: ImageOptions["patterns"];
 }) {
   const d = edit.design;
   const setD = (patch: Partial<Design>) => setEdit({ ...edit, design: { ...d, ...patch } });
+  const setBackground = (b: BackgroundKind) =>
+    setD({ background: b, pattern: b === "patron" ? (d.pattern ?? makePattern(patternDefaults, randomSeed())) : d.pattern });
   return (
     <div className="flex flex-col gap-4 text-sm">
       <h3 className="font-semibold">Ajuste fino</h3>
@@ -712,7 +856,7 @@ function FineTune({
       </label>
       <label className="flex flex-col gap-1.5">
         <span className="text-muted">Fondo</span>
-        <select value={d.background} onChange={(e) => setD({ background: e.target.value as BackgroundKind })} className="h-10 rounded-lg border border-line bg-ink px-2">
+        <select value={d.background} onChange={(e) => setBackground(e.target.value as BackgroundKind)} className="h-10 rounded-lg border border-line bg-ink px-2">
           {BACKGROUNDS.map((b) => (
             <option key={b.id} value={b.id} disabled={(b.id === "foto" && !hasPhotos) || (b.id === "ia" && !aiImages)}>
               {b.label}
@@ -720,6 +864,9 @@ function FineTune({
           ))}
         </select>
       </label>
+      {d.background === "patron" && d.pattern ? (
+        <PatternTune pattern={d.pattern} setPattern={(pattern) => setD({ pattern })} defaults={patternDefaults} />
+      ) : null}
       {d.background === "foto" || d.background === "ia" ? (
         <PhotoPicker mode={d.background} text={text} photo={photo} setPhoto={setPhoto} defaultQuery={photoQuery} />
       ) : null}
@@ -776,6 +923,83 @@ function LotePreview({ texts, opts, brand, formatTouched }: { texts: string[]; o
         })}
       </div>
       {texts.length > shown.length ? <p className="text-sm text-muted">Y {texts.length - shown.length} más.</p> : null}
+    </div>
+  );
+}
+
+/** Ajuste del patrón de la propuesta elegida: capas, variación, intensidad y densidad. */
+function PatternTune({
+  pattern,
+  setPattern,
+  defaults,
+}: {
+  pattern: PatternDesign;
+  setPattern: (p: PatternDesign) => void;
+  defaults: ImageOptions["patterns"];
+}) {
+  const set = (patch: Partial<PatternDesign>) => setPattern({ ...pattern, ...patch });
+  const toggle = (id: PatternId) => {
+    const on = pattern.layers.includes(id);
+    if (on && pattern.layers.length === 1) return;
+    if (!on && pattern.layers.length >= 3) return;
+    set({ layers: on ? pattern.layers.filter((l) => l !== id) : [...pattern.layers, id] });
+  };
+  const usesEmoji = pattern.layers.some((l) => l.startsWith("emoji"));
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-line p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-muted">Patrón</span>
+        <Button className="h-8 px-3 text-sm" onClick={() => set({ seed: randomSeed() })}>
+          🎲 Otra variación
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Capas del patrón (hasta 3)">
+        {PATTERNS.map((p) => {
+          const on = pattern.layers.includes(p.id);
+          const marked = defaults.kinds.includes(p.id);
+          if (!on && !marked) return null;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => toggle(p.id)}
+              className={`rounded-full border px-2.5 py-1 text-xs ${on ? "border-accent bg-accent-soft" : "border-line text-muted hover:border-line-strong"}`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      <span className="-mt-1 text-xs text-muted">Hasta 3 capas. Se muestran los tipos marcados en el panel.</span>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-muted">Intensidad</span>
+        <div className="flex gap-1.5">
+          {INTENSITIES.map((i) => (
+            <button
+              key={i.id}
+              type="button"
+              aria-pressed={pattern.intensity === i.id}
+              onClick={() => set({ intensity: i.id as Intensity })}
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs ${pattern.intensity === i.id ? "border-accent bg-accent-soft" : "border-line"}`}
+            >
+              {i.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <label className="flex flex-col gap-1.5">
+        <span className="flex justify-between text-muted">
+          Tamaño del patrón <span className="font-mono">{Math.round(pattern.scale * 100)}%</span>
+        </span>
+        <input type="range" min={0.5} max={2} step={0.1} value={pattern.scale} onChange={(e) => set({ scale: parseFloat(e.target.value) })} />
+      </label>
+      {usesEmoji ? (
+        <label className="flex flex-col gap-1.5">
+          <span className="text-muted">Emojis</span>
+          <TextInput value={pattern.emojis} maxLength={80} onChange={(e) => set({ emojis: e.target.value })} className="text-lg" />
+        </label>
+      ) : null}
     </div>
   );
 }

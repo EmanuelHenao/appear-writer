@@ -10,7 +10,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts", "test/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}", "test/**/*.test.{ts,tsx}"],
     testTimeout: 60_000,
   },
 });

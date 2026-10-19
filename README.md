@@ -23,6 +23,9 @@ La IA es opcional. Cada ayuda (sugerencia de estilo, capítulos, ortografía, t�
 - PNG a 2160 px de ancho, carrusel en ZIP, generación en lote y galería para reabrir y volver a descargar.
 - Marca personal opcional: firma, logo, paleta y fuente.
 - Fondos con fotos reales de Unsplash o Pexels, con su crédito, o generados con IA (requiere una key de OpenAI).
+- Patrones generativos sin IA ni keys (v3): 19 tipos entre geométricos (Truchet, Bauhaus, semitono…), funciones matemáticas (campo de flujo, Lissajous, espirógrafo, curvas de nivel, Voronoi, árbol fractal…), emojis y ASCII. Marcas en una lista cuáles se usan; cada imagen lleva uno al azar o varios superpuestos. Se ajustan intensidad, tamaño y variación.
+- Botón «Aleatorio» para probar un diseño al azar con lo marcado en el panel (con «Anterior» para volver) y «4 al azar».
+- «Mis plantillas»: marca con ☆ las propuestas que te gusten y reutilízalas con otros textos.
 
 **Libros**
 - Chats de WhatsApp de Android e iOS, en español o inglés, con las fotos del .zip.
@@ -82,3 +85,4 @@ Para validar también el EPUB con epubcheck, indica la ruta del jar: `EPUBCHECK_
 - [x] Libros v1 (WhatsApp con un mensaje por página, PDF, EPUB y PNG)
 - [x] Extras: marca personal, generación en lote, galería, fotos reales
 - [x] v2: chat con burbujas y cuatro plantillas nuevas (Titular, Franja, Marco, Cuaderno)
+- [x] v3: patrones generativos, diseño aleatorio y plantillas propias

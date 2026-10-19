@@ -1,6 +1,7 @@
 import type { FontId } from "./fonts";
 import type { FormatId } from "./fit";
 import type { Palette } from "./palettes";
+import type { PatternDesign } from "./patterns";
 
 export type FamilyId = "bold" | "vivo" | "minimal" | "arte";
 
@@ -11,13 +12,14 @@ export const FAMILIES: { id: FamilyId; label: string; hint: string }[] = [
   { id: "arte", label: "Artístico", hint: "Papel, collage, acuarela" },
 ];
 
-export type BackgroundKind = "estilo" | "plano" | "degradado" | "textura" | "foto" | "ia";
+export type BackgroundKind = "estilo" | "plano" | "degradado" | "textura" | "patron" | "foto" | "ia";
 
 export const BACKGROUNDS: { id: BackgroundKind; label: string }[] = [
   { id: "estilo", label: "El del estilo" },
   { id: "plano", label: "Color plano" },
   { id: "degradado", label: "Degradado" },
   { id: "textura", label: "Textura" },
+  { id: "patron", label: "Patrón generativo" },
   { id: "foto", label: "Foto real" },
   { id: "ia", label: "Fondo IA" },
 ];
@@ -42,6 +44,8 @@ export interface SlideSpec {
   sizeScale: number;
   background: BackgroundKind;
   photo?: PhotoRef | null;
+  /** Patrón generativo cuando background es «patron». */
+  pattern?: PatternDesign | null;
   emphasis: string[];
   /** Etiqueta corta opcional (por ejemplo «Lunes» o «Regla nº 3»). */
   label?: string;

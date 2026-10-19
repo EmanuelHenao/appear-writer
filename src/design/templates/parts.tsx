@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { splitEmphasis } from "../fit";
+import { PatternLayer } from "../patterns";
 import type { SlideSpec } from "../spec";
 
 export const SANS_DETAIL = "'Jost Variable', system-ui, sans-serif";
@@ -55,6 +56,13 @@ export function Backdrop({ spec, styleLayer }: { spec: SlideSpec; styleLayer?: R
       return <div style={{ ...base, background: p.bg }} />;
     case "degradado":
       return <div style={{ ...base, background: `linear-gradient(165deg, ${p.bg} 0%, ${p.bg2} 100%)` }} />;
+    case "patron":
+      return (
+        <>
+          <div style={{ ...base, background: p.bg }} />
+          {spec.pattern ? <PatternLayer pattern={spec.pattern} palette={p} width={spec.width} height={spec.height} index={spec.index} /> : null}
+        </>
+      );
     case "textura":
       return (
         <>

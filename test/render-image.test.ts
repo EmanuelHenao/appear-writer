@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { composeSlides, suggestedImageOptions } from "@/design/compose";
 import { readText } from "@/design/fit";
+import { PATTERN_IDS } from "@/design/patterns";
 import { TEMPLATES } from "@/design/templates";
 import { getBrowser } from "@/lib/render/browser";
 import { renderSlidesPng } from "@/lib/render/image";
@@ -41,6 +42,34 @@ describe("render de imágenes con Chromium", () => {
       expect(pngSize(png)).toEqual({ w: 2160, h: 2700 });
       await save(`${TEMPLATES[i].id}.png`, png);
     }
+  });
+
+  it("cada patrón generativo se dibuja detrás del texto", async () => {
+    const text = "Hoy elijo empezar 🌿✨";
+    const opts = suggestedImageOptions(readText(text));
+    const tpl = ["bold-poster", "vivo-bloques", "minimal-serif", "arte-collage", "bold-noir", "minimal-centro"];
+    const pals = ["energia", "pop", "salvia", "kraft", "noir", "tinta", "vino", "atardecer"];
+    const slides = PATTERN_IDS.flatMap((id, i) =>
+      composeSlides({
+        text,
+        options: opts,
+        design: {
+          templateId: tpl[i % tpl.length],
+          paletteId: pals[i % pals.length],
+          font: null,
+          background: "patron",
+          pattern: { seed: 11 + i, layers: [id], intensity: "media", scale: 1, emojis: "🌿✨" },
+        },
+      }),
+    );
+    const combo = composeSlides({
+      text,
+      options: opts,
+      design: { templateId: "bold-poster", paletteId: "pop", font: null, background: "patron", pattern: { seed: 5, layers: ["topografico", "ascii-ruido", "emoji-lluvia"], intensity: "fuerte", scale: 1, emojis: "🌿✨" } },
+    });
+    const pngs = await renderSlidesPng([...slides, ...combo], false);
+    expect(pngs).toHaveLength(PATTERN_IDS.length + 1);
+    for (const [i, png] of pngs.entries()) await save(`patron-${PATTERN_IDS[i] ?? "combinado"}.png`, png);
   });
 
   it("un carrusel produce una imagen por diapositiva", async () => {
