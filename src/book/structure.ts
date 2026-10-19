@@ -1,4 +1,5 @@
 import type { Block, Source } from "./model";
+import { applyFixes } from "./fixes";
 import { chapterRuleOf, type BookOptions, type ChapterRule } from "./options";
 
 // Arma los capítulos de forma determinista. La IA solo puede aportar
@@ -160,6 +161,9 @@ export function buildChapters(sources: Source[], options: BookOptions, ai: AiRes
       c.blocks = c.blocks.map((b) =>
         (b.type === "paragraph" || b.type === "message") && ai.corrections![b.key] ? { ...b, text: ai.corrections![b.key] } : b,
       );
+    }
+    if (Object.keys(options.fixes ?? {}).length) {
+      c.blocks = c.blocks.map((b) => (b.type === "paragraph" || b.type === "message" ? { ...b, text: applyFixes(b.text, options.fixes) } : b));
     }
   }
   return chapters;

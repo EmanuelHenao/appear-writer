@@ -104,3 +104,13 @@ describe("reglas de capítulos", () => {
     expect(buildChapters([src], old).map((c) => c.title)).toEqual(["Marzo de 2023", "Enero de 2024"]);
   });
 });
+
+describe("correcciones de ortografía", () => {
+  it("se aplican al maquetar sin cambiar la fuente", () => {
+    const o = suggestedBookOptions([prose]);
+    const ch = buildChapters([prose], { ...o, fixes: { texto: "Texto corregido" } });
+    const p = ch[1].blocks.find((b) => b.type === "paragraph");
+    expect(p && "text" in p ? p.text : "").toBe("Texto corregido uno.");
+    expect(prose.blocks.some((b) => b.type === "paragraph" && b.text === "Texto uno.")).toBe(true);
+  });
+});

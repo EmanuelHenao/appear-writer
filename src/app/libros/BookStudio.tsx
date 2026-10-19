@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus } from "@/components/icons";
 import { OwnPhotos } from "@/components/OwnPhotos";
+import { SpellCheck } from "./SpellCheck";
 import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
 import { Button, Check, Choice, Notice, Section, SuggestDot, TextInput, saveBlob } from "@/components/ui";
 import { useSettings } from "@/components/useSettings";
@@ -594,6 +595,10 @@ export function BookStudio() {
                   placeholder="Para ti, que estuviste en cada mensaje."
                 />
               </label>
+            </Section>
+
+            <Section title="Ortografía" summary={Object.keys(o.fixes).length ? `${Object.keys(o.fixes).length} correcciones` : "Sin IA · sin revisar"}>
+              <SpellCheck bookId={book.id} fixes={o.fixes} onApply={(fixes) => setOptions({ ...o, fixes })} />
             </Section>
 
             <Section title="Imágenes" summary={[o.content.chatPhotos && "Fotos del chat", o.content.stockPhotos && "Fotos en capítulos"].filter(Boolean).join(" · ") || "Solo texto"} suggested={o.content.chatPhotos === sug?.content.chatPhotos && o.content.stockPhotos === sug?.content.stockPhotos}>

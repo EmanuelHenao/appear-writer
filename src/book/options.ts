@@ -41,6 +41,8 @@ export const BookOptionsSchema = z.object({
     dedication: z.string().max(400),
   }),
   ai: z.object({ chapters: z.boolean(), spelling: z.boolean(), title: z.boolean(), cover: z.boolean() }),
+  /** Correcciones de ortografía sin IA que el usuario aplicó: palabra en minúsculas → reemplazo. */
+  fixes: z.record(z.string().max(60), z.string().max(80)).default({}),
   outputs: z.object({ pdf: z.boolean(), epub: z.boolean(), png: z.boolean() }),
 });
 
@@ -147,6 +149,7 @@ export function suggestedBookOptions(sources: Source[]): BookOptions {
       dedication: "",
     },
     ai: { chapters: false, spelling: false, title: false, cover: false },
+    fixes: {},
     outputs: { pdf: true, epub: true, png: false },
   };
 }
