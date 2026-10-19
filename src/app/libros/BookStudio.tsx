@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus } from "@/components/icons";
+import { BottomSheet } from "@/components/BottomSheet";
 import { OwnPhotos } from "@/components/OwnPhotos";
+import { useMedia } from "@/components/useWidth";
 import { Shortcuts, type ShortcutGroup } from "@/components/Shortcuts";
 import { SpellCheck } from "./SpellCheck";
 import { ContentStep } from "./ContentStep";
@@ -71,6 +73,8 @@ export function BookStudio() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const hasAi = !!settings?.ai.resolved;
+  // En pantallas pequeñas la ficha y las sugerencias van en una hoja que sube desde abajo.
+  const wide = useMedia("(min-width: 1024px)");
   const hasPhotos = !!settings && (settings.photos.unsplash || settings.photos.pexels);
 
   // Carga el libro de ?id= o el último abierto.
@@ -888,88 +892,97 @@ export function BookStudio() {
       aside
     );
 
+  const sheet = !wide && panel !== "lista" && asideNow !== aside;
+
   return (
-    <StudioLayout
-      steps={steps}
-      navExtra={
-        <span className="flex items-center gap-2">
-          <Shortcuts groups={BOOK_SHORTCUTS} />
-          <Link href="/galeria" className="text-accent hover:underline">
-            Libros guardados
-          </Link>
-        </span>
-      }
-      aside={asideNow}
-      footer={footer}
-      stickyPreview={hasSources}
-    >
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="eyebrow">Vista previa{pages ? ` · ${pages.toLocaleString("es")} págs.` : ""}</div>
-          <h2 className="mt-1 font-display text-xl font-bold max-lg:hidden">{o?.cover.title || "Tu libro"}</h2>
-        </div>
-        {hasSources ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <div role="group" aria-label="Vista" className="flex gap-0.5 rounded-lg bg-panel p-[3px] text-[13px]">
-              {([1, 2] as const).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-pressed={view.cols === c}
-                  onClick={() => control({ cols: c })}
-                  className={`rounded-md px-3 py-1.5 ${view.cols === c ? "bg-panel-2 text-text" : "text-muted hover:text-text"}`}
-                >
-                  {c === 1 ? "Página" : "Doble página"}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center">
-              <IconBtn label="Página anterior" disabled={view.page <= 1} onClick={() => step(-1)}>
-                <ChevronLeft />
-              </IconBtn>
-              <span
-                className="min-w-20 text-center font-mono text-xs tabular-nums"
-                title={pages && shown && pages > shown ? `La vista previa muestra las primeras ${shown} de ${pages} páginas` : undefined}
-              >
-                {pageLabel} / {view.total || shown || "…"}
-              </span>
-              <IconBtn label="Página siguiente" disabled={!shown || (pairs ? view.page + 1 : view.page) >= shown} onClick={() => step(1)}>
-                <ChevronRight />
-              </IconBtn>
-            </div>
-            <div className="flex items-center">
-              <IconBtn label="Alejar" onClick={() => control({ zoom: Math.max(0.2, view.zoom / 1.25) })}>
-                <Minus />
-              </IconBtn>
-              <button
-                type="button"
-                onClick={() => control({ zoom: 0 })}
-                title="Ajustar a la ventana"
-                className={`h-7 min-w-14 rounded-md px-1.5 font-mono text-xs tabular-nums hover:bg-panel-2 ${view.fit ? "text-muted" : "text-text"}`}
-              >
-                {view.fit ? "Ajustar" : `${Math.round(view.zoom * 100)}%`}
-              </button>
-              <IconBtn label="Acercar" onClick={() => control({ zoom: Math.min(3, view.zoom * 1.25) })}>
-                <Plus />
-              </IconBtn>
-            </div>
+    <>
+      <StudioLayout
+        steps={steps}
+        navExtra={
+          <span className="flex items-center gap-2">
+            <Shortcuts groups={BOOK_SHORTCUTS} />
+            <Link href="/galeria" className="text-accent hover:underline">
+              Libros guardados
+            </Link>
+          </span>
+        }
+        aside={sheet ? aside : asideNow}
+        footer={footer}
+        stickyPreview={hasSources}
+      >
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="eyebrow">Vista previa{pages ? ` · ${pages.toLocaleString("es")} págs.` : ""}</div>
+            <h2 className="mt-1 font-display text-xl font-bold max-lg:hidden">{o?.cover.title || "Tu libro"}</h2>
           </div>
-        ) : null}
-      </div>
-      <div className={`flex-1 overflow-hidden rounded-2xl bg-panel lg:min-h-0 ${hasSources ? "max-lg:h-[40vh] max-lg:flex-none" : "min-h-[520px]"}`}>
-        {hasSources && book ? (
-          <iframe
-            ref={frame}
-            key={version}
-            title="Vista previa del libro"
-            src={`/api/books/${book.id}/preview?limite=40&v=${version}${loadFocus ? `&foco=${encodeURIComponent(loadFocus)}` : ""}`}
-            className="h-full w-full border-0"
-          />
-        ) : (
-          <div className="flex h-full min-h-[520px] items-center justify-center p-10 text-center text-muted">Aquí aparecerán las páginas de tu libro, a doble página.</div>
-        )}
-      </div>
-    </StudioLayout>
+          {hasSources ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <div role="group" aria-label="Vista" className="flex gap-0.5 rounded-lg bg-panel p-[3px] text-[13px]">
+                {([1, 2] as const).map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={view.cols === c}
+                    onClick={() => control({ cols: c })}
+                    className={`rounded-md px-3 py-1.5 ${view.cols === c ? "bg-panel-2 text-text" : "text-muted hover:text-text"}`}
+                  >
+                    {c === 1 ? "Página" : "Doble página"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center">
+                <IconBtn label="Página anterior" disabled={view.page <= 1} onClick={() => step(-1)}>
+                  <ChevronLeft />
+                </IconBtn>
+                <span
+                  className="min-w-20 text-center font-mono text-xs tabular-nums"
+                  title={pages && shown && pages > shown ? `La vista previa muestra las primeras ${shown} de ${pages} páginas` : undefined}
+                >
+                  {pageLabel} / {view.total || shown || "…"}
+                </span>
+                <IconBtn label="Página siguiente" disabled={!shown || (pairs ? view.page + 1 : view.page) >= shown} onClick={() => step(1)}>
+                  <ChevronRight />
+                </IconBtn>
+              </div>
+              <div className="flex items-center">
+                <IconBtn label="Alejar" onClick={() => control({ zoom: Math.max(0.2, view.zoom / 1.25) })}>
+                  <Minus />
+                </IconBtn>
+                <button
+                  type="button"
+                  onClick={() => control({ zoom: 0 })}
+                  title="Ajustar a la ventana"
+                  className={`h-7 min-w-14 rounded-md px-1.5 font-mono text-xs tabular-nums hover:bg-panel-2 ${view.fit ? "text-muted" : "text-text"}`}
+                >
+                  {view.fit ? "Ajustar" : `${Math.round(view.zoom * 100)}%`}
+                </button>
+                <IconBtn label="Acercar" onClick={() => control({ zoom: Math.min(3, view.zoom * 1.25) })}>
+                  <Plus />
+                </IconBtn>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div id="book-preview" className={`flex-1 overflow-hidden rounded-2xl bg-panel lg:min-h-0 ${hasSources ? "max-lg:h-[40vh] max-lg:flex-none" : "min-h-[520px]"}`}>
+          {hasSources && book ? (
+            <iframe
+              ref={frame}
+              key={version}
+              title="Vista previa del libro"
+              src={`/api/books/${book.id}/preview?limite=40&v=${version}${loadFocus ? `&foco=${encodeURIComponent(loadFocus)}` : ""}`}
+              className="h-full w-full border-0"
+            />
+          ) : (
+            <div className="flex h-full min-h-[520px] items-center justify-center p-10 text-center text-muted">Aquí aparecerán las páginas de tu libro, a doble página.</div>
+          )}
+        </div>
+      </StudioLayout>
+      {sheet ? (
+        <BottomSheet anchorId="book-preview" label={panel === "ficha" ? "Ficha del mensaje" : "Sugerencias"} onClose={panel === "ficha" ? closePanel : () => setPanel("lista")}>
+          {asideNow}
+        </BottomSheet>
+      ) : null}
+    </>
   );
 }
 
@@ -1064,7 +1077,8 @@ function toTop() {
   requestAnimationFrame(() => {
     const el = document.getElementById("studio-aside");
     if (el) el.scrollTop = 0;
-    if (window.innerWidth < 1024) el?.scrollIntoView({ block: "start" });
+    const sheet = document.getElementById("sheet-body");
+    if (sheet) sheet.scrollTop = 0;
   });
 }
 
