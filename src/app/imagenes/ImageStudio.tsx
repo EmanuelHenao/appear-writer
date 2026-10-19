@@ -20,6 +20,7 @@ import {
 } from "@/design/compose";
 import { LENGTH_LABEL, LIMITS, readText, type FormatId } from "@/design/fit";
 import { FONTS, IMAGE_FONT_CHOICES, fontStack, type FontId } from "@/design/fonts";
+import { CAPTION_STYLES, templateCaption, type Caption, type CaptionStyle } from "@/design/caption";
 import { getPalette, PALETTES } from "@/design/palettes";
 import { INTENSITIES, makePattern, PATTERNS, patternLabel, randomSeed, type Intensity, type PatternDesign, type PatternId } from "@/design/patterns";
 import type { ImageRequest } from "@/design/request";
@@ -75,7 +76,11 @@ export function ImageStudio() {
   const saved = useSavedTemplates();
   const [usedSaved, setUsedSaved] = useState<string[]>([]);
   const [photo, setPhoto] = useState<PhotoRef | null>(null);
-  const [caption, setCaption] = useState<{ texto: string; hashtags: string[] } | null>(null);
+  /** Texto de publicación escrito o editado (por ti o por la IA); null = el de la plantilla. */
+  const [caption, setCaption] = useState<Caption | null>(null);
+  const [captionFromAi, setCaptionFromAi] = useState(false);
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("reflexion");
+  const [captionVariant, setCaptionVariant] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "error" | "info"; text: string } | null>(null);
   const [batchText, setBatchText] = useState("");
@@ -248,6 +253,7 @@ export function ImageStudio() {
     });
 
   const editSlides = edit ? slidesFor(edit.design, edit) : [];
+  const captionShown = caption ?? templateCaption(reading.text, { style: captionStyle, variant: captionVariant, handle: opts.brand.handle ? brandHandle : "" });
 
   function request(): ImageRequest | null {
     if (!edit) return null;
@@ -259,7 +265,7 @@ export function ImageStudio() {
       emphasis,
       label: edit.label || undefined,
       photo,
-      caption: caption ?? undefined,
+      caption: opts.extras.caption || opts.extras.hashtags ? { texto: opts.extras.caption ? captionShown.texto : "", hashtags: opts.extras.hashtags ? captionShown.hashtags : [] } : undefined,
     };
   }
 
@@ -283,7 +289,8 @@ export function ImageStudio() {
     setBusy("caption");
     setMessage(null);
     try {
-      setCaption(await postJson("/api/ai", { task: "caption", text: reading.text }));
+      setCaption(await postJson<Caption>("/api/ai", { task: "caption", text: reading.text }));
+      setCaptionFromAi(true);
     } catch (e) {
       setMessage({ tone: "error", text: (e as Error).message });
     } finally {
@@ -300,7 +307,11 @@ export function ImageStudio() {
     setBusy("batch");
     setMessage(null);
     try {
-      await downloadFrom("/api/render/batch", { texts: batchTexts, options: effective, autoFormat: !formatTouched }, "lote.zip");
+      await downloadFrom(
+        "/api/render/batch",
+        { texts: batchTexts, options: effective, autoFormat: !formatTouched, caption: { style: captionStyle, handle: opts.brand.handle ? brandHandle : "" } },
+        "lote.zip",
+      );
       setMessage({ tone: "ok", text: `Listo: ${batchTexts.length} imágenes en un ZIP${effective.extras.gallery ? ", también guardadas en la galería" : ""}.` });
     } catch (e) {
       setMessage({ tone: "error", text: (e as Error).message });
@@ -658,10 +669,10 @@ export function ImageStudio() {
               <Check id="x-gal" checked={opts.extras.gallery} onChange={(v) => set("extras", { ...opts.extras, gallery: v })} suggested>
                 Guardar en galería
               </Check>
-              <Check id="x-cap" checked={opts.extras.caption} disabled={!hasAi} onChange={(v) => set("extras", { ...opts.extras, caption: v })} hint={!hasAi ? "Necesita IA" : undefined}>
+              <Check id="x-cap" checked={opts.extras.caption} onChange={(v) => set("extras", { ...opts.extras, caption: v })} hint="Con plantillas, sin IA">
                 Texto de publicación
               </Check>
-              <Check id="x-tag" checked={opts.extras.hashtags} disabled={!hasAi} onChange={(v) => set("extras", { ...opts.extras, hashtags: v })} hint={!hasAi ? "Necesita IA" : undefined}>
+              <Check id="x-tag" checked={opts.extras.hashtags} onChange={(v) => set("extras", { ...opts.extras, hashtags: v })} hint="De las palabras del texto">
                 Hashtags
               </Check>
             </div>
@@ -720,15 +731,32 @@ export function ImageStudio() {
             patternDefaults={effective.patterns}
           />
           {opts.extras.caption || opts.extras.hashtags ? (
-            <div className="flex flex-col gap-3 border-t border-line pt-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Texto para la publicación</h3>
-                <Button className="h-9" onClick={writeCaption} busy={busy === "caption"}>
-                  {caption ? "Escribir otro" : "Escribirlo con IA"}
-                </Button>
-              </div>
-              {caption ? <CaptionBox caption={caption} showText={opts.extras.caption} showTags={opts.extras.hashtags} /> : null}
-            </div>
+            <CaptionPanel
+              caption={captionShown}
+              edited={!!caption}
+              fromAi={captionFromAi}
+              showText={opts.extras.caption}
+              showTags={opts.extras.hashtags}
+              style={captionStyle}
+              hasAi={hasAi}
+              aiBusy={busy === "caption"}
+              onStyle={(st) => {
+                setCaptionStyle(st);
+                setCaption(null);
+                setCaptionFromAi(false);
+              }}
+              onVariant={() => {
+                setCaptionVariant((v) => v + 1);
+                setCaption(null);
+                setCaptionFromAi(false);
+              }}
+              onEdit={(c) => setCaption(c)}
+              onReset={() => {
+                setCaption(null);
+                setCaptionFromAi(false);
+              }}
+              onAi={writeCaption}
+            />
           ) : null}
         </section>
       ) : null}
@@ -978,26 +1006,108 @@ function FineTune({
   );
 }
 
-function CaptionBox({ caption, showText, showTags }: { caption: { texto: string; hashtags: string[] }; showText: boolean; showTags: boolean }) {
+/** Texto de la publicación: plantilla sin IA (sugerida), editable, o escrito por la IA si lo pides. */
+function CaptionPanel({
+  caption,
+  edited,
+  fromAi,
+  showText,
+  showTags,
+  style,
+  hasAi,
+  aiBusy,
+  onStyle,
+  onVariant,
+  onEdit,
+  onReset,
+  onAi,
+}: {
+  caption: Caption;
+  edited: boolean;
+  fromAi: boolean;
+  showText: boolean;
+  showTags: boolean;
+  style: CaptionStyle;
+  hasAi: boolean;
+  aiBusy: boolean;
+  onStyle: (s: CaptionStyle) => void;
+  onVariant: () => void;
+  onEdit: (c: Caption) => void;
+  onReset: () => void;
+  onAi: () => void;
+}) {
   const full = [showText ? caption.texto : "", showTags ? caption.hashtags.join(" ") : ""].filter(Boolean).join("\n\n");
   const [copied, setCopied] = useState(false);
   return (
-    <div className="flex flex-col gap-2">
-      <textarea readOnly value={full} rows={5} className="rounded-xl border border-line bg-ink p-3 text-sm leading-relaxed" />
-      <Button
-        className="h-9 self-start"
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(full);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          } catch {
-            setCopied(false);
-          }
-        }}
-      >
-        {copied ? "Copiado" : "Copiar"}
-      </Button>
+    <div className="flex flex-col gap-3 border-t border-line pt-4 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-semibold">Texto para la publicación</h3>
+        <span className="text-xs text-muted">{fromAi ? "Escrito por la IA" : edited ? "Editado por ti" : "Plantilla, sin IA"}</span>
+      </div>
+      {showText ? (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Estilo del texto">
+          {CAPTION_STYLES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              aria-pressed={style === c.id && !fromAi}
+              title={c.hint}
+              onClick={() => onStyle(c.id)}
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${style === c.id && !fromAi ? "border-accent bg-accent-soft" : "border-line text-muted hover:border-line-strong"}`}
+            >
+              {c.label} {c.id === "reflexion" ? <SuggestDot /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {showText ? (
+        <textarea
+          aria-label="Texto de la publicación"
+          value={caption.texto}
+          rows={5}
+          onChange={(e) => onEdit({ ...caption, texto: e.target.value })}
+          className="rounded-xl border border-line bg-ink p-3 leading-relaxed"
+        />
+      ) : null}
+      {showTags ? (
+        <TextInput
+          aria-label="Hashtags"
+          value={caption.hashtags.join(" ")}
+          onChange={(e) => onEdit({ ...caption, hashtags: e.target.value.split(/\s+/).filter(Boolean) })}
+        />
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          className="h-9"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(full);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            } catch {
+              setCopied(false);
+            }
+          }}
+        >
+          {copied ? "Copiado" : "Copiar"}
+        </Button>
+        {showText ? (
+          <Button className="h-9" onClick={onVariant} title="Otra frase de cierre del mismo estilo">
+            <Dice size={15} />
+            Otra versión
+          </Button>
+        ) : null}
+        {edited ? (
+          <button type="button" onClick={onReset} className="text-xs text-accent hover:underline">
+            Volver a la plantilla
+          </button>
+        ) : null}
+        {hasAi ? (
+          <Button className="ml-auto h-9" onClick={onAi} busy={aiBusy}>
+            {fromAi ? "Pedir otro a la IA" : "Escribirlo con IA"}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
