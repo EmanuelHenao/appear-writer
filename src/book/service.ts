@@ -1,6 +1,6 @@
 import "server-only";
 import type { FontId } from "@/design/fonts";
-import { VIRTUAL_ORIGIN } from "@/lib/render/browser";
+import { toVirtual, VIRTUAL_ORIGIN } from "@/lib/render/browser";
 import { renderBookPdf, renderBookPngs } from "@/lib/render/book";
 import { fontFaceCss } from "@/lib/render/fontcss";
 import { dataPath, writeBinary } from "@/lib/storage";
@@ -24,7 +24,8 @@ export async function bookHtml(book: BookProject, target: "preview" | "print", p
     options: book.options,
     fontCss,
     mediaUrl,
-    stock: book.options.content.stockPhotos ? book.stock.photos : [],
+    // Las fotos subidas viven en DATA_DIR: Chromium las lee del origen virtual.
+    stock: book.options.content.stockPhotos ? book.stock.photos.map((p) => (target === "print" ? { ...p, url: toVirtual(p.url)! } : p)) : [],
     previewLimit,
   });
 }

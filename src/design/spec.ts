@@ -20,7 +20,7 @@ export const BACKGROUNDS: { id: BackgroundKind; label: string }[] = [
   { id: "degradado", label: "Degradado" },
   { id: "textura", label: "Textura" },
   { id: "patron", label: "Patrón generativo" },
-  { id: "foto", label: "Foto real" },
+  { id: "foto", label: "Foto" },
   { id: "ia", label: "Fondo IA" },
 ];
 

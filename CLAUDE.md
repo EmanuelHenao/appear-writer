@@ -58,7 +58,7 @@ docker compose up -d --build
 - `src/lib/ai/`: `detect.ts` detecta el proveedor por la key; `client.ts` usa el SDK oficial de Anthropic (salida estructurada) y HTTP directo para OpenAI/compatibles y Gemini; `tasks.ts` contiene los prompts.
 - `src/import/`: importadores (WhatsApp, texto, docx con mammoth, pdf con unpdf) hacia el modelo `Block` de `src/book/model.ts`.
 - `src/book/`: opciones y paletas del libro, `structure.ts` (capítulos deterministas), `covers.ts`, `html.ts` + `paginate.js.ts` (documento único para vista previa, PDF y PNG; el paginador corre en el navegador y, en la vista previa, atiende `postMessage` `book-control` para página/doble página, zoom y navegación, y responde con `book-view`), `epub.ts`, `service.ts`.
-- Persistencia en archivos bajo `DATA_DIR` (por defecto `./data`): `settings.json`, `templates.json`, `gallery/<id>/`, `books/<id>/book.json` + `media/`. No hay base de datos.
+- Persistencia en archivos bajo `DATA_DIR` (por defecto `./data`): `settings.json`, `templates.json`, `uploads/propias/` (tus fotos, vía `/api/uploads`), `gallery/<id>/`, `books/<id>/book.json` + `media/`. No hay base de datos.
 - Acceso con contraseña única (`APP_PASSWORD`, Basic Auth en `src/proxy.ts`).
 
 ## Convenciones

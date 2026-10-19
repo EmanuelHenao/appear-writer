@@ -592,7 +592,7 @@ export function ImageStudio() {
             <div className="grid grid-cols-2 gap-2.5">
               {BACKGROUNDS.map((b) => {
                 const on = opts.backgrounds.includes(b.id);
-                const unavailable = (b.id === "foto" && !hasPhotos) || (b.id === "ia" && !aiImages);
+                const unavailable = b.id === "ia" && !aiImages;
                 return (
                   <Check
                     key={b.id}
@@ -601,8 +601,10 @@ export function ImageStudio() {
                     disabled={(on && opts.backgrounds.length === 1) || (!on && unavailable)}
                     suggested={suggested.backgrounds.includes(b.id)}
                     hint={
-                      b.id === "foto" && !hasPhotos
-                        ? "Necesita una key de Unsplash o Pexels"
+                      b.id === "foto"
+                        ? hasPhotos
+                          ? "Tuya o de Unsplash/Pexels"
+                          : "Sube la tuya en el ajuste fino"
                         : b.id === "ia" && !aiImages
                           ? "Necesita una key de OpenAI"
                           : undefined
@@ -982,7 +984,7 @@ function FineTune({
         <span className="text-muted">Fondo</span>
         <select value={d.background} onChange={(e) => setBackground(e.target.value as BackgroundKind)} className="h-10 rounded-lg border border-line bg-ink px-2">
           {BACKGROUNDS.map((b) => (
-            <option key={b.id} value={b.id} disabled={(b.id === "foto" && !hasPhotos) || (b.id === "ia" && !aiImages)}>
+            <option key={b.id} value={b.id} disabled={b.id === "ia" && !aiImages}>
               {b.label}
             </option>
           ))}
@@ -992,7 +994,7 @@ function FineTune({
         <PatternTune pattern={d.pattern} setPattern={(pattern) => setD({ pattern })} defaults={patternDefaults} />
       ) : null}
       {d.background === "foto" || d.background === "ia" ? (
-        <PhotoPicker mode={d.background} text={text} photo={photo} setPhoto={setPhoto} defaultQuery={photoQuery} />
+        <PhotoPicker mode={d.background} text={text} photo={photo} setPhoto={setPhoto} defaultQuery={photoQuery} hasStock={hasPhotos} />
       ) : null}
       <label className="flex flex-col gap-1.5">
         <span className="text-muted">Destacar (separa con comas)</span>

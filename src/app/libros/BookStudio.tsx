@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus } from "@/components/icons";
+import { OwnPhotos } from "@/components/OwnPhotos";
 import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
 import { Button, Check, Choice, Notice, Section, SuggestDot, TextInput, saveBlob } from "@/components/ui";
 import { useSettings } from "@/components/useSettings";
@@ -198,7 +199,8 @@ export function BookStudio() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       const photos: PhotoRef[] = data.results.slice(0, 12).map((r: PhotoRef) => ({ url: r.url, thumb: r.thumb, credit: r.credit, creditUrl: r.creditUrl, source: r.source }));
-      await patch({ stock: { query: q, photos } });
+      // Tus fotos subidas se conservan; las del banco se cambian por las nuevas.
+      await patch({ stock: { query: q, photos: [...book.stock.photos.filter((p) => p.source === "subida"), ...photos].slice(0, 40) } });
       if (o && !o.content.stockPhotos) setOptions({ ...o, content: { ...o.content, stockPhotos: true } });
     } catch (e) {
       setMsg({ tone: "error", text: (e as Error).message });
@@ -594,19 +596,32 @@ export function BookStudio() {
               </label>
             </Section>
 
-            <Section title="Imágenes" summary={[o.content.chatPhotos && "Fotos del chat", o.content.stockPhotos && "Fotos de banco"].filter(Boolean).join(" · ") || "Solo texto"} suggested={o.content.chatPhotos === sug?.content.chatPhotos && o.content.stockPhotos === sug?.content.stockPhotos}>
+            <Section title="Imágenes" summary={[o.content.chatPhotos && "Fotos del chat", o.content.stockPhotos && "Fotos en capítulos"].filter(Boolean).join(" · ") || "Solo texto"} suggested={o.content.chatPhotos === sug?.content.chatPhotos && o.content.stockPhotos === sug?.content.stockPhotos}>
               <div className="grid grid-cols-2 gap-2.5">
                 <Check id="i-chat" checked={o.content.chatPhotos} disabled={!hasImages} onChange={(v) => upContent({ chatPhotos: v })} suggested={S(true, sug?.content.chatPhotos)} hint={!hasImages ? "Sube el .zip del chat para tener fotos" : undefined}>
                   Fotos del chat
                 </Check>
-                <Check id="i-stock" checked={o.content.stockPhotos} disabled={!hasPhotos || !book.stock.photos.length} onChange={(v) => upContent({ stockPhotos: v })} hint={!hasPhotos ? "Necesita key de Unsplash o Pexels" : "En cada apertura de capítulo"}>
-                  Fotos reales de banco
+                <Check id="i-stock" checked={o.content.stockPhotos} disabled={!book.stock.photos.length} onChange={(v) => upContent({ stockPhotos: v })} hint={book.stock.photos.length ? `${book.stock.photos.length} elegidas, una por capítulo` : "Elige o sube fotos abajo"}>
+                  Fotos en los capítulos
                 </Check>
                 <Check id="i-none" checked={!o.content.chatPhotos && !o.content.stockPhotos} onChange={(v) => v && upContent({ chatPhotos: false, stockPhotos: false })}>
                   Solo texto
                 </Check>
               </div>
-              {hasPhotos ? <StockSearch book={book} busy={busy === "stock"} onSearch={searchStock} /> : null}
+              <div className="flex flex-col gap-3 rounded-xl border border-line bg-ink/40 p-3 text-sm">
+                <OwnPhotos
+                  multiple
+                  title="Tus fotos para las aperturas de capítulo"
+                  selected={book.stock.photos.map((p) => p.url)}
+                  onToggle={(p, on) => {
+                    const photos = on ? [...book.stock.photos.filter((x) => x.url !== p.url), p] : book.stock.photos.filter((x) => x.url !== p.url);
+                    void patch({ stock: { query: book.stock.query, photos: photos.slice(0, 40) } }).then(() => {
+                      if (on && !o.content.stockPhotos) setOptions({ ...o, content: { ...o.content, stockPhotos: true } });
+                    });
+                  }}
+                />
+                {hasPhotos ? <StockSearch book={book} busy={busy === "stock"} onSearch={searchStock} /> : null}
+              </div>
             </Section>
 
             <Section title="Ayuda de la IA" summary={aiOn ? `${aiOn} ${aiOn === 1 ? "activa" : "activas"}` : "Apagada"}>
