@@ -38,6 +38,7 @@ La IA es opcional. Cada ayuda (sugerencia de estilo, capítulos, ortografía, t�
 - Chats de WhatsApp de Android e iOS, en español o inglés, con las fotos del .zip.
 - Un mensaje por página, burbujas de chat (v2) o mensajes seguidos. El nombre, la fecha y la hora de cada mensaje se activan por separado.
 - Capítulos de los chats por mes, por año o por silencios (cuando pasan varios días sin mensajes), y por títulos en los textos.
+- Paso Contenido: decides qué hacer con cada mensaje antes de exportar. Ocultarlo, destacarlo (cita, foto a página completa, foto + texto), empezar un capítulo en él, quitar fotos una a una, editar el texto con formato (negrita, cursiva, letra, tamaño, color) y añadir páginas (separador, página libre, imagen, en blanco). Con lista filtrable, selección múltiple, sugerencias sin IA y clic directo en la vista previa.
 - Revisión ortográfica sin IA con un diccionario de español: propone tildes, abreviaturas y palabras dudosas, y solo cambia las que marques.
 - Tus propias fotos en las aperturas de capítulo.
 - Visor a doble página con miniaturas, zoom y navegación.
@@ -99,3 +100,4 @@ Para validar también el EPUB con epubcheck, indica la ruta del jar: `EPUBCHECK_
 - [x] v3: patrones generativos, diseño aleatorio y plantillas propias
 - [x] v4: estudio en dos columnas con la vista previa siempre visible, opciones plegables y visor de libro a doble página
 - [x] v5: mejoras sin IA (texto y hashtags, ortografía, capítulos por año o silencios, fotos propias), lote ajustable e imagen Docker de 1,3 GB
+- [x] v6: editar el contenido del libro mensaje a mensaje (paso Contenido)

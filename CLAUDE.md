@@ -30,6 +30,7 @@ La galería de propuestas visuales aprobada está en https://claude.ai/artifact/
 - **Interior del libro:** Cormorant es la letra sugerida, pero el usuario elige entre Cormorant, Caslon, Lora y Fraunces. Nombre, fecha y hora de cada mensaje son casillas separadas (por defecto: nombre y fecha).
 - **Interfaz:** "estudio oscuro creativo"; acento lila `#b6a6ff`, ámbar `#ffc56b` para lo sugerido. Tokens en `src/app/globals.css`.
 - **Layout de los estudios (v4):** dos columnas (`src/components/StudioLayout.tsx`). A la izquierda, los pasos con scroll propio y la acción principal fija al pie; a la derecha, la vista previa, que nunca se mueve. Las secciones de opciones son plegables y muestran lo elegido en su título (`Section` con `summary`). En Imágenes el ajuste fino es el paso 3 de la columna izquierda; en Libros la vista previa es a doble página por defecto. Iconos de línea en `src/components/icons.tsx`, sin emojis en la interfaz.
+- **Paso Contenido de Libros (v6, maqueta aprobada en https://claude.ai/artifact/AwYbA28RQF56nuK58SKpx6):** la lista y la ficha del mensaje se sustituyen en la columna izquierda (la vista previa nunca se tapa). Destacar (D) aplica Cita directamente. El separador es solo decorativo; los capítulos se crean con «Capítulo aquí».
 
 ## Comandos
 
@@ -60,10 +61,11 @@ docker compose up -d --build
 - `src/lib/ai/`: `detect.ts` detecta el proveedor por la key; `client.ts` usa el SDK oficial de Anthropic (salida estructurada) y HTTP directo para OpenAI/compatibles y Gemini; `tasks.ts` contiene los prompts.
 - `src/import/`: importadores (WhatsApp, texto, docx con mammoth, pdf con unpdf) hacia el modelo `Block` de `src/book/model.ts`.
 - `src/book/`: opciones y paletas del libro, `structure.ts` (capítulos deterministas: por mes, año, silencios o ninguno, más las correcciones de `fixes.ts`), `covers.ts`, `html.ts` + `paginate.js.ts` (documento único para vista previa, PDF y PNG; el paginador corre en el navegador y, en la vista previa, atiende `postMessage` `book-control` para página/doble página, zoom y navegación, y responde con `book-view`), `epub.ts`, `service.ts`.
+- Paso Contenido (v6): `src/book/edits.ts` (esquema zod de `book.edits`: por bloque `hidden`, `design`, `runs` con formato, `align`, `chapter`, `photos`; y `inserts`, las páginas añadidas), `rows.ts` (filas de la lista), `suggest.ts` (sugerencias deterministas para ocultar o destacar). `buildChapters(sources, options, ai, edits)` aplica todo al maquetar; el original nunca se toca. UI en `src/app/libros/ContentStep.tsx`, `MessageInspector.tsx`, `RichText.tsx` (editor que pinta y lee `Run[]`, nunca guarda HTML) y `SuggestPanel.tsx`. En la vista previa cada bloque lleva `data-key`; el paginador envía `book-pick` al hacer clic y `book-focus`, acepta `book-control {focus}` y `?foco=<clave>` centra la ventana de páginas. `place()` parte el texto por caracteres conservando los spans de formato (`setRange`).
 - `src/lib/spelling.ts`: ortografía sin IA con nspell y `dictionary-es` (leído de `node_modules`). Solo propone; lo aplicado se guarda en `book.options.fixes`.
 - `src/lib/uploads.ts`: fotos propias en `DATA_DIR/uploads/propias` (`/api/uploads`).
 - `docs/PRODUCTO.md`: funciones y comportamiento del producto. Actualízalo cuando cambie lo que ve el usuario.
-- Persistencia en archivos bajo `DATA_DIR` (por defecto `./data`): `settings.json`, `templates.json`, `uploads/propias/` (tus fotos, vía `/api/uploads`), `gallery/<id>/`, `books/<id>/book.json` + `media/`. No hay base de datos.
+- Persistencia en archivos bajo `DATA_DIR` (por defecto `./data`): `settings.json`, `templates.json`, `uploads/propias/` (tus fotos, vía `/api/uploads`), `gallery/<id>/`, `books/<id>/book.json` (fuentes, opciones y `edits`) + `media/`. No hay base de datos.
 - Acceso con contraseña única (`APP_PASSWORD`, Basic Auth en `src/proxy.ts`).
 
 ## Convenciones

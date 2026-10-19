@@ -163,7 +163,64 @@ Se dibujan con la paleta elegida, sin IA y sin conexión. Hay 19 tipos en cuatro
 - **Cada fuente** muestra un resumen, por ejemplo «WhatsApp · 5 mensajes · 2 fotos».
 - **El libro se recuerda:** al volver a la página se abre el último libro. «Empezar otro libro» deja uno nuevo en blanco.
 
-### Paso 2 · Opciones del libro
+### Paso 2 · Contenido
+
+Aquí decides qué pasa con cada mensaje (o párrafo) antes de exportar. El original de las fuentes nunca se toca: lo que decides se guarda aparte y se aplica al maquetar la vista previa, el PDF, el EPUB y los PNG. Ctrl+Z deshace la última decisión.
+
+**La lista**
+
+- Muestra los mensajes agrupados por capítulo, tal como quedarán, incluidos los ocultos (tachados y en gris) y las páginas que añadas (filas propias con «+»).
+- Cada fila lleva sus etiquetas: Oculto, ★ Cita / ★ Foto, Capítulo, N fotos, editado.
+- Un resumen arriba: «712 mensajes · 94 ocultos · 4 destacados · 1 texto editado».
+- **Filtros:** búsqueda (sin importar tildes), persona, desde/hasta, con fotos y estado (todos, ocultos, destacados, editados). «Quitar filtros» los limpia.
+- **Selección múltiple:** casillas, Mayús + clic marca un tramo y la casilla de arriba marca todo lo que se ve. La barra lila permite Ocultar, Destacar y, en «Más», Mostrar, Quitar el destacado o Restablecer.
+- La lista solo pinta las filas visibles, así que funciona con chats de miles de mensajes.
+
+**Elegir un mensaje.** Con un clic en la lista o directamente en la vista previa, se abre su **ficha** en la columna izquierda (la vista previa no se tapa) y el mensaje queda con un contorno lila en el libro. Si el mensaje cae fuera de las páginas que muestra la vista previa, esta se recarga centrada en él.
+
+**La ficha del mensaje**
+
+| Parte | Qué hace |
+| --- | --- |
+| Cabecera | Autor, fecha y página; ‹ › pasan al mensaje anterior o siguiente («334 de 712»). |
+| Ocultar (H) | El mensaje no entra en el libro. Se puede volver a mostrar. |
+| Destacar (D) | Aplica el diseño Cita directamente. |
+| Capítulo aquí | Empieza un capítulo en este mensaje, con título y subtítulo. Usa el diseño de apertura del libro y entra en el índice; la regla automática sigue en el resto. Si es el primer mensaje del capítulo, lo renombra. |
+| Diseño de la página | Normal ●, Cita, Foto completa (texto en la página siguiente ● o sobre la foto con un velo del color profundo) y Foto + texto (una o dos fotos enmarcadas con el texto debajo). Los de foto solo se activan si el mensaje tiene fotos. |
+| Fotos | Miniaturas con × para quitar cada foto (↺ para volver a ponerla) y dónde van: Junto ●, Página antes (una página solo con las fotos y el mensaje después) o Ambas. |
+| Texto | Editor con formato: negrita, cursiva, subrayado, letra (las cuatro del libro), tamaño, color de la paleta, alineación y quitar formato. Sobre la palabra o frase seleccionada; sin selección, sobre todo el texto. «Volver al original» deshace la edición. |
+| Página antes / después | Añade una página junto al mensaje. |
+| Restablecer este mensaje | Quita todo lo decidido sobre él. |
+
+Atajos en la ficha (también con el foco en la vista previa): ← → cambian de mensaje, H oculta, D destaca, Esc vuelve a la lista.
+
+**Páginas añadidas**
+
+| Tipo | Cómo se ve |
+| --- | --- |
+| Separador | Ornamento, título y una línea pequeña opcional. Es solo decorativo: no abre capítulo ni entra en el índice (para eso está «Capítulo aquí»). |
+| Página libre | Tu texto, con el mismo editor de formato; una línea en blanco separa párrafos. |
+| Imagen | Una de tus fotos subidas, a página completa (●) o enmarcada con pie. |
+| En blanco | Página vacía sin número, para cuadrar páginas. |
+
+Cada página añadida se puede mover antes o después de su mensaje o quitar.
+
+**Sugerencias (sin IA).** El aviso ámbar «Sugerencias: N para ocultar y N para destacar» abre un panel con dos pestañas:
+
+| Grupo | Qué propone | ● |
+| --- | --- | --- |
+| Solo emojis | Mensajes como «👍» o «❤️» sin texto ni foto | Sí |
+| Stickers | Imágenes .webp sin texto | Sí |
+| Solo risas | «jajaja», «jsjs», «xd» | No |
+| Respuestas de una palabra | «ok», «vale», «sí», «dale», «ya» | No |
+| El primer mensaje | Destacarlo | Sí |
+| Aniversarios | El primer mensaje de cada año en la fecha en que empezó el chat | Sí |
+| Fechas especiales | 1 de enero, 14 de febrero, 24 y 25 de diciembre | No |
+| Los más largos | Hasta 5 de más de 280 caracteres | No |
+
+Cada grupo se abre para quitar mensajes sueltos. El botón dice lo que hará («Ocultar 94 y destacar 3 mensajes»). Los avisos de WhatsApp («Multimedia omitido», «Se eliminó este mensaje») ya los quita el importador.
+
+### Paso 3 · Opciones del libro
 
 Los valores sugeridos dependen de lo que subas. Los cambios se guardan solos y la vista previa se actualiza.
 
@@ -214,7 +271,8 @@ Las tildes que dependen del sentido de la frase (esta/está, si/sí, tu/tú) no 
 - **Zoom:** − y + amplían o reducen; «Ajustar» encaja la página o el pliego entero en la ventana.
 - **Tira de miniaturas** al pie: un clic lleva a esa página y la página actual queda resaltada.
 - **La vista elegida se mantiene** al cambiar opciones.
-- **Límite:** la vista previa muestra las primeras 40 páginas; el archivo final las incluye todas.
+- **Límite:** la vista previa muestra 40 páginas: las primeras o, si eliges un mensaje que cae más adelante, las que lo rodean. El número de página es siempre el real («306–307 / 648») y el archivo final las incluye todas.
+- **Clic en un mensaje** abre su ficha en el paso Contenido.
 
 ### Generar libro
 
@@ -270,7 +328,9 @@ Las tildes que dependen del sentido de la frase (esta/está, si/sí, tu/tú) no 
 
 ## 10. Limitaciones conocidas
 
-- La vista previa del libro muestra hasta 40 páginas.
+- La vista previa del libro muestra 40 páginas a la vez (alrededor del mensaje elegido).
+- En el EPUB los diseños especiales se simplifican (la cita va como cita en su página y las fotos completas como fotos con su texto) y la letra elegida por tramo no viaja: se usa la del libro.
+- Si quitas una fuente y la vuelves a subir, lo decidido sobre sus mensajes no se recupera.
 - En el lote no hay fondos de foto ni fondo IA.
 - La ortografía sin IA no corrige tildes que dependen del sentido de la frase.
 - Aún no se ha desplegado en Dokploy ni se ha probado con keys reales.
@@ -283,4 +343,5 @@ Las tildes que dependen del sentido de la frase (esta/está, si/sí, tu/tú) no 
 | v2 | Burbujas de chat en los libros y cuatro plantillas de imagen nuevas: Titular, Franja, Marco y Cuaderno. |
 | v3 | Patrones generativos, botón Aleatorio con Anterior, 4 al azar y Mis plantillas. |
 | v4 | Estudio en dos columnas con la vista previa fija, opciones plegables con resumen, visor del libro a doble página con zoom y navegación, e iconos de línea. |
+| v6 | Paso Contenido en Libros: lista con filtros y selección múltiple, ficha de cada mensaje (ocultar, destacar, capítulo aquí, diseños Cita / Foto completa / Foto + texto, fotos una a una, texto con formato), páginas añadidas (separador, página libre, imagen, en blanco), sugerencias sin IA y clic en la vista previa. |
 | v5 | Texto de publicación y hashtags sin IA, capítulos por año o por silencios, fotos propias, ortografía sin IA, atajos R y Ctrl+Z, vista previa fija en móvil, miniaturas del libro, lote ajustable e imagen Docker de 1,3 GB. |
