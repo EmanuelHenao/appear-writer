@@ -9,6 +9,8 @@ export interface Step {
   label: string;
   done?: boolean;
   current?: boolean;
+  /** Antes de ir al paso (por ejemplo, desplegarlo). */
+  onGo?: () => void;
 }
 
 /**
@@ -41,7 +43,10 @@ export function StudioLayout({
               key={s.id}
               type="button"
               aria-current={s.current ? "step" : undefined}
-              onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              onClick={() => {
+                s.onGo?.();
+                requestAnimationFrame(() => document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+              }}
               className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] ${s.current ? "bg-accent-soft text-text" : "text-muted hover:text-text"}`}
             >
               <span

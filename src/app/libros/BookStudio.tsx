@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Minus, Plus } from "@/components/icons";
+import { ChevronDown, ChevronLeft, ChevronRight, Minus, Plus } from "@/components/icons";
 import { BottomSheet } from "@/components/BottomSheet";
 import { OwnPhotos } from "@/components/OwnPhotos";
 import { useMedia } from "@/components/useWidth";
 import { Shortcuts, type ShortcutGroup } from "@/components/Shortcuts";
 import { SpellCheck } from "./SpellCheck";
-import { ContentStep } from "./ContentStep";
+import { ContentStep, editsLine } from "./ContentStep";
 import { MessageInspector } from "./MessageInspector";
 import { SuggestPanel } from "./SuggestPanel";
 import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
@@ -65,6 +65,8 @@ export function BookStudio() {
   const [selected, setSelected] = useState<string | null>(null);
   const [panel, setPanel] = useState<"lista" | "ficha" | "sugerencias">("lista");
   const [pickPage, setPickPage] = useState<number | null>(null);
+  // Paso Contenido plegado: la lista puede ser muy larga hasta llegar a las opciones.
+  const [contentFolded, setContentFolded] = useState(false);
   // Fuentes cargadas en la vista previa: si el texto con formato pide otra, hay que recargarla entera.
   const loadedFonts = useRef("");
   const patching = useRef<{ running: boolean; again: boolean }>({ running: false, again: false });
@@ -92,6 +94,7 @@ export function BookStudio() {
       .then((b: Book | null) => {
         if (b) {
           editsRef.current = b.edits ?? emptyEdits();
+          if (safeGet(FOLD_KEY)) setContentFolded(true);
           setBook({ ...b, edits: editsRef.current });
         } else safeSet(LAST_KEY, "");
       })
@@ -299,6 +302,11 @@ export function BookStudio() {
     control({ focus: key });
   }
 
+  function foldContent(folded: boolean) {
+    setContentFolded(folded);
+    safeSet(FOLD_KEY, folded ? "1" : "");
+  }
+
   function closePanel() {
     setPanel("lista");
     openItem(null);
@@ -428,7 +436,7 @@ export function BookStudio() {
   const touched = sum.hidden + sum.highlighted + sum.inserts + sum.chapters + sum.edited > 0;
   const steps: Step[] = [
     { id: "paso-1", label: "Fuentes", done: hasSources, current: !hasSources },
-    { id: "paso-2", label: "Contenido", done: touched, current: hasSources && panel !== "lista" },
+    { id: "paso-2", label: "Contenido", done: touched, current: hasSources && panel !== "lista", onGo: () => contentFolded && foldContent(false) },
     { id: "paso-3", label: "Opciones", current: hasSources && panel === "lista" },
   ];
   const index = selected ? items.findIndex((r) => r.key === selected) : -1;
@@ -573,12 +581,29 @@ export function BookStudio() {
       {book && hasSources ? (
         <section id="paso-2" className="flex scroll-mt-4 flex-col gap-2">
           <StepHead label="Paso 2 · Contenido">
-            {touched ? (
-              <button type="button" onClick={() => undo()} className="text-xs text-accent hover:underline">
-                Deshacer
+            <span className="flex items-center gap-3">
+              {touched ? (
+                <button type="button" onClick={() => undo()} className="text-xs text-accent hover:underline">
+                  Deshacer
+                </button>
+              ) : null}
+              <button type="button" onClick={() => foldContent(!contentFolded)} aria-expanded={!contentFolded} aria-controls="contenido-lista" className="flex items-center gap-1 text-xs text-muted hover:text-white">
+                {contentFolded ? "Desplegar" : "Plegar"}
+                <ChevronDown className={`transition-transform ${contentFolded ? "" : "rotate-180"}`} />
               </button>
-            ) : null}
+            </span>
           </StepHead>
+          {contentFolded ? (
+            <button type="button" onClick={() => foldContent(false)} className="flex flex-wrap gap-x-2 rounded-lg border border-line px-3 py-2.5 text-left text-xs text-muted hover:border-line-strong hover:text-white">
+              {editsLine(rows, edits).map((s, i) => (
+                <span key={s}>
+                  {i ? "· " : ""}
+                  {s}
+                </span>
+              ))}
+            </button>
+          ) : (
+          <div id="contenido-lista">
           <ContentStep
             rows={rows}
             edits={edits}
@@ -595,6 +620,8 @@ export function BookStudio() {
               toTop();
             }}
           />
+          </div>
+          )}
         </section>
       ) : null}
 
@@ -1116,6 +1143,8 @@ function runFonts(edits: BookEdits): string {
   for (const i of edits.inserts) for (const r of i.runs ?? []) if (r.font) set.add(r.font);
   return [...set].sort().join(",");
 }
+
+const FOLD_KEY = "appear:contenido-plegado";
 
 function safeGet(k: string): string | null {
   try {

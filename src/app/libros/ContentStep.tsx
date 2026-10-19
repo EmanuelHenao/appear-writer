@@ -68,7 +68,6 @@ export function ContentStep({
   let last = first;
   while (last < shown.length && tops[last] < scroll + height + 200) last++;
 
-  const sum = editsSummary(edits);
   const totalBlocks = rows.filter((r) => r.kind === "block").length;
   const checkedVisible = blocks.filter((r) => checked.has(r.key));
   const allChecked = blocks.length > 0 && checkedVisible.length === blocks.length;
@@ -102,14 +101,7 @@ export function ContentStep({
     setMore(false);
   }
 
-  const summary = [
-    `${totalBlocks.toLocaleString("es")} ${rows.some((r) => r.kind === "block" && r.isMessage) ? "mensajes" : "párrafos"}`,
-    sum.hidden && `${sum.hidden} ${sum.hidden === 1 ? "oculto" : "ocultos"}`,
-    sum.highlighted && `${sum.highlighted} ${sum.highlighted === 1 ? "destacado" : "destacados"}`,
-    sum.inserts && `${sum.inserts} ${sum.inserts === 1 ? "página añadida" : "páginas añadidas"}`,
-    sum.chapters && `${sum.chapters} ${sum.chapters === 1 ? "capítulo" : "capítulos"} a mano`,
-    sum.edited && `${sum.edited} ${sum.edited === 1 ? "texto editado" : "textos editados"}`,
-  ].filter(Boolean);
+  const summary = editsLine(rows, edits);
 
   return (
     <div className="flex flex-col gap-3">
@@ -325,4 +317,18 @@ export function Badge({ children, tone }: { children: React.ReactNode; tone?: "s
       {children}
     </span>
   );
+}
+
+/** El resumen del paso en una línea: «712 mensajes · 12 ocultos · 3 destacados». */
+export function editsLine(rows: Row[], edits: BookEdits): string[] {
+  const sum = editsSummary(edits);
+  const blocks = rows.filter((r) => r.kind === "block");
+  return [
+    `${blocks.length.toLocaleString("es")} ${blocks.some((r) => r.kind === "block" && r.isMessage) ? "mensajes" : "párrafos"}`,
+    sum.hidden && `${sum.hidden} ${sum.hidden === 1 ? "oculto" : "ocultos"}`,
+    sum.highlighted && `${sum.highlighted} ${sum.highlighted === 1 ? "destacado" : "destacados"}`,
+    sum.inserts && `${sum.inserts} ${sum.inserts === 1 ? "página añadida" : "páginas añadidas"}`,
+    sum.chapters && `${sum.chapters} ${sum.chapters === 1 ? "capítulo" : "capítulos"} a mano`,
+    sum.edited && `${sum.edited} ${sum.edited === 1 ? "texto editado" : "textos editados"}`,
+  ].filter((x): x is string => !!x);
 }

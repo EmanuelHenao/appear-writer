@@ -176,6 +176,7 @@ Aquí decides qué pasa con cada mensaje (o párrafo) antes de exportar. El orig
 - **Filtros:** búsqueda (sin importar tildes), persona, desde/hasta, con fotos y estado (todos, ocultos, destacados, editados). «Quitar filtros» los limpia.
 - **Selección múltiple:** casillas, Mayús + clic marca un tramo y la casilla de arriba marca todo lo que se ve. La barra lila permite Ocultar, Destacar y, en «Más», Mostrar, Quitar el destacado o Restablecer.
 - La lista solo pinta las filas visibles, así que funciona con chats de miles de mensajes.
+- **Plegar:** el botón «Plegar» del título del paso deja solo el resumen en una línea, para llegar rápido a las opciones. Se despliega al tocar el resumen, «Desplegar» o «Contenido» en la barra de pasos. La app recuerda en ese navegador si lo dejaste plegado.
 
 **Elegir un mensaje.** Con un clic en la lista o directamente en la vista previa, se abre su **ficha** en la columna izquierda (la vista previa no se tapa) y el mensaje queda con un contorno lila en el libro. Si el mensaje cae fuera de las páginas que muestra la vista previa, esta se recarga centrada en él.
 
