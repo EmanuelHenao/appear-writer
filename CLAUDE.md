@@ -66,4 +66,4 @@ docker compose up -d --build
 - La UI, los textos, los comentarios y la documentación van en español.
 - Cada opción nueva entra en el esquema zod correspondiente con su valor sugerido y aparece en el panel; si usa IA, lleva su casilla, apagada por defecto.
 - Las plantillas y portadas nuevas se prueban renderizándolas (`test/render-*.test.ts`) y mirando el resultado.
-- La versión de `playwright` en `package.json` debe coincidir con la imagen base del `Dockerfile`.
+- La versión de `playwright` en `package.json` debe coincidir con `PLAYWRIGHT_VERSION` del `Dockerfile`. La imagen usa la salida `standalone` de Next: lo que se lea de `node_modules` en tiempo de ejecución (fuentes, Playwright) va en `outputFileTracingIncludes` de `next.config.ts`.
