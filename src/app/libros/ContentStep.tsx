@@ -108,6 +108,7 @@ export function ContentStep({
     sum.highlighted && `${sum.highlighted} ${sum.highlighted === 1 ? "destacado" : "destacados"}`,
     sum.inserts && `${sum.inserts} ${sum.inserts === 1 ? "página añadida" : "páginas añadidas"}`,
     sum.chapters && `${sum.chapters} ${sum.chapters === 1 ? "capítulo" : "capítulos"} a mano`,
+    sum.edited && `${sum.edited} ${sum.edited === 1 ? "texto editado" : "textos editados"}`,
   ].filter(Boolean);
 
   return (

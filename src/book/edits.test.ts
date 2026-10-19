@@ -99,6 +99,11 @@ describe("sugerencias sin IA", () => {
     expect(by.fechas.keys).toEqual(["c1:4"]);
   });
 
+  it("tras destacar el primer mensaje no propone el siguiente como «primero»", () => {
+    const s = suggestEdits([src], setBlockEdit(emptyEdits(), "c1:0", { design: "cita" }));
+    expect(s.find((x) => x.id === "primero")).toBeUndefined();
+  });
+
   it("no vuelve a proponer lo que ya está oculto", () => {
     const s = suggestEdits([src], setBlockEdit(emptyEdits(), "c1:1", { hidden: true }));
     expect(s.find((x) => x.id === "risas")).toBeUndefined();

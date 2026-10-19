@@ -51,7 +51,7 @@ export function BookStudio() {
   const [pages, setPages] = useState<number | null>(null);
   // Visor de la vista previa (lo maneja el propio documento del libro).
   const frame = useRef<HTMLIFrameElement>(null);
-  const wanted = useRef<{ cols: 1 | 2; zoom: number }>({ cols: 2, zoom: 0 });
+  const wanted = useRef<{ cols: 1 | 2; zoom: number; page: number }>({ cols: 2, zoom: 0, page: 1 });
   const [view, setView] = useState({ cols: 2 as 1 | 2, zoom: 1, fit: true, page: 1, offset: 0, total: 0 });
   const [shown, setShown] = useState(0);
   const [paste, setPaste] = useState({ open: false, text: "", title: "" });
@@ -101,16 +101,23 @@ export function BookStudio() {
         const w = wanted.current;
         if (w.cols !== 2 || w.zoom) win?.postMessage({ type: "book-control", cols: w.cols, zoom: w.zoom }, "*");
         if (selectedRef.current) win?.postMessage({ type: "book-control", focus: selectedRef.current }, "*");
+        else if (w.page > 1) win?.postMessage({ type: "book-control", goto: w.page }, "*");
       }
       if (e.data?.type === "book-view") {
         setShown(e.data.shown);
+        wanted.current.page = e.data.page;
         setView({ cols: e.data.cols, zoom: e.data.zoom, fit: wanted.current.zoom === 0, page: e.data.page, offset: e.data.offset ?? 0, total: e.data.total ?? e.data.shown });
+      }
+      if (e.data?.type === "book-key" && typeof e.data.key === "string") {
+        const d = e.data;
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: d.key, ctrlKey: d.ctrl, metaKey: d.meta, shiftKey: d.shift, altKey: d.alt }));
       }
       if (e.data?.type === "book-pick" && typeof e.data.key === "string") {
         selectedRef.current = e.data.key;
         setSelected(e.data.key);
         setPanel("ficha");
         setPickPage(e.data.page || null);
+        toTop();
       }
       if (e.data?.type === "book-focus" && e.data.key === selectedRef.current) {
         if (e.data.found) setPickPage(e.data.page || null);
@@ -255,6 +262,7 @@ export function BookStudio() {
     if (key) {
       setPanel("ficha");
       setPickPage(null);
+      toTop();
     }
     control({ focus: key });
   }
@@ -545,12 +553,15 @@ export function BookStudio() {
             participants={participants}
             selected={selected}
             suggestions={{
-              hide: suggestions.filter((x) => x.kind === "ocultar").reduce((a, x) => a + x.keys.length, 0),
-              highlight: suggestions.filter((x) => x.kind === "destacar").reduce((a, x) => a + x.keys.length, 0),
+              hide: suggestions.filter((x) => x.kind === "ocultar" && x.suggested).reduce((a, x) => a + x.keys.length, 0),
+              highlight: suggestions.filter((x) => x.kind === "destacar" && x.suggested).reduce((a, x) => a + x.keys.length, 0),
             }}
             onOpen={(k) => openItem(k)}
             onChange={(next) => setEdits(next)}
-            onSuggest={() => setPanel("sugerencias")}
+            onSuggest={() => {
+              setPanel("sugerencias");
+              toTop();
+            }}
           />
         </section>
       ) : null}
@@ -1010,6 +1021,15 @@ function move(list: Source[], i: number, d: number): string[] {
   const j = i + d;
   [ids[i], ids[j]] = [ids[j], ids[i]];
   return ids;
+}
+
+/** La ficha y las sugerencias empiezan arriba de la columna izquierda. */
+function toTop() {
+  requestAnimationFrame(() => {
+    const el = document.getElementById("studio-aside");
+    if (el) el.scrollTop = 0;
+    if (window.innerWidth < 1024) el?.scrollIntoView({ block: "start" });
+  });
 }
 
 function safeGet(k: string): string | null {

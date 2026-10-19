@@ -278,6 +278,11 @@ export const PAGINATE_JS = String.raw`
         if (d.goto) { current = d.goto; goTo(d.goto); report(); }
         if ("focus" in d) focus(d.focus, true);
       });
+      // Los atajos del estudio siguen funcionando con el foco dentro de la vista previa.
+      window.addEventListener("keydown", function (e) {
+        if (!/^(h|d|z|ArrowLeft|ArrowRight|Escape)$/i.test(e.key)) return;
+        try { parent.postMessage({ type: "book-key", key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, shift: e.shiftKey, alt: e.altKey }, "*"); } catch (err) {}
+      });
       // Elegir un bloque con un clic: la página padre abre su ficha.
       document.body.classList.add("previewing");
       book.addEventListener("click", function (e) {

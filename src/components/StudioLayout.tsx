@@ -56,7 +56,9 @@ export function StudioLayout({
           ))}
           {navExtra ? <div className="ml-auto text-xs">{navExtra}</div> : null}
         </nav>
-        <div className="scroll-thin flex min-h-0 flex-1 flex-col gap-7 px-6 pb-6 pt-5 lg:overflow-y-auto">{aside}</div>
+        <div id="studio-aside" className="scroll-thin flex min-h-0 flex-1 flex-col gap-7 px-6 pb-6 pt-5 lg:overflow-y-auto">
+          {aside}
+        </div>
         <div className="sticky bottom-0 z-10 flex-none border-t border-line bg-panel px-6 py-3.5">{footer}</div>
       </aside>
       <section

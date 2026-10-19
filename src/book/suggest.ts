@@ -80,7 +80,10 @@ export function suggestEdits(sources: Source[], edits: BookEdits): Suggestion[] 
     },
   ];
 
-  const withText = plain.filter((m) => m.text.length >= 2 && !EMOJI_ONLY.test(m.text));
+  // Lo destacado se calcula sobre todo el chat (el primer mensaje es siempre el mismo)
+  // y luego se quita lo que ya está destacado.
+  const free = new Set(plain.map((m) => m.key));
+  const withText = visible.filter((m) => m.text.length >= 2 && !EMOJI_ONLY.test(m.text));
   const first = withText[0];
   const byLength = [...withText].sort((a, b) => b.text.length - a.text.length);
   const long = byLength.filter((m) => m.text.length >= 280).slice(0, 5);
@@ -109,5 +112,6 @@ export function suggestEdits(sources: Source[], edits: BookEdits): Suggestion[] 
     { id: "largos", kind: "destacar", label: "Los mensajes más largos", hint: "Hasta 5 de más de 280 caracteres", suggested: false, keys: longKeys },
   ];
 
+  for (const h of highlight) h.keys = h.keys.filter((k) => free.has(k));
   return [...hide, ...highlight].filter((s) => s.keys.length);
 }
