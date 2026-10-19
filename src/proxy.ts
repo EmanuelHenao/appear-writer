@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // app queda abierta, pensado para uso local.
 export function proxy(request: NextRequest) {
   const password = process.env.APP_PASSWORD;
-  if (!password) return NextResponse.next();
+  if (!password || request.nextUrl.pathname === "/api/health") return NextResponse.next();
 
   const header = request.headers.get("authorization") ?? "";
   if (header.startsWith("Basic ")) {

@@ -62,7 +62,7 @@ export async function listBooks() {
       title: b.options.cover.title || "Sin título",
       updatedAt: b.updatedAt,
       sources: b.sources.length,
-      coverUrl: b.hasCover ? `/api/files/books/${b.id}/cover.png?v=${encodeURIComponent(b.updatedAt)}` : undefined,
+      coverUrl: `/api/books/${b.id}/cover?v=${encodeURIComponent(b.updatedAt)}`,
     }));
 }
 

@@ -2,6 +2,8 @@
 
 Guía para trabajar en este repositorio con Claude Code.
 
+@AGENTS.md
+
 ## Qué es
 
 **Appear Writer** es una web app de uso personal con dos funciones:
@@ -9,16 +11,15 @@ Guía para trabajar en este repositorio con Claude Code.
 1. **Imágenes para redes:** convierte un texto o frase en una imagen llamativa y de alta resolución para Instagram y Facebook.
 2. **Libros:** convierte chats de WhatsApp, archivos .txt, .docx, .pdf o texto pegado en un libro maquetado (PDF de imprenta, EPUB e imágenes por página).
 
-Estado actual: fase de diseño. Todavía no hay código. El plan aprobado está en `/home/ema/.claude/plans/giggly-foraging-wall.md` y la galería de propuestas visuales en https://claude.ai/artifact/TDMx83DGEfQtrH7oQFT4DA.
+La galería de propuestas visuales aprobada está en https://claude.ai/artifact/TDMx83DGEfQtrH7oQFT4DA.
 
 ## Principios de producto (no negociables)
 
-- **El usuario decide todo.** Antes de crear una imagen o un libro, todas las opciones aparecen en un panel de casillas y selectores, precargadas con valores base que sugiere el sistema. El usuario puede cambiar cualquiera. Nunca se aplica una decisión que el usuario no haya visto.
-  - Imágenes: formato, tipografía, colores, paleta, fondo, marca personal y extras.
-  - Libros: fuentes, tamaño de página, tipografía, paleta, portada, ornamentos, imágenes, pasos de IA y formatos de salida.
-- **IA mínima y opcional.** Cada llamada a la IA se activa con su propia casilla. Nunca se reescribe el contenido del usuario sin permiso. Los valores base salen primero de reglas deterministas (por ejemplo, la longitud del texto sugiere el formato).
+- **El usuario decide todo.** Antes de crear una imagen o un libro, todas las opciones aparecen en un panel de casillas y selectores, precargadas con valores base que sugiere el sistema (marcados con ●). El usuario puede cambiar cualquiera. Nunca se aplica una decisión que el usuario no haya visto.
+- **IA mínima y opcional.** Cada llamada a la IA se activa con su propia casilla y viene apagada. Nunca se reescribe el contenido del usuario: los resultados de la IA se guardan aparte (`book.ai`) y solo se aplican mientras su casilla esté marcada. Los valores base salen primero de reglas deterministas.
 - **El texto se renderiza nítido.** La IA nunca dibuja el texto dentro de la imagen.
-- **Las fotos de personas deben parecer reales.** Se usan bancos de fotos (Unsplash y Pexels) en lugar de imágenes generadas.
+- **Las fotos de personas deben parecer reales.** Se usan bancos de fotos (Unsplash y Pexels), con su crédito.
+- **Debe funcionar con cualquier API key** (Anthropic, OpenAI, Gemini, OpenRouter, Groq, xAI, DeepSeek, Mistral o cualquier servicio compatible con OpenAI) y también sin ninguna.
 - **El diseño es la prioridad.** Ante decisiones visuales, propón opciones y pregunta antes de decidir.
 
 ## Decisiones de diseño (galería aprobada)
@@ -27,26 +28,39 @@ Estado actual: fase de diseño. Todavía no hay código. El plan aprobado está 
 - **4 propuestas** por texto.
 - **Portadas de libro:** A (tela verde con marco dorado), C (tipográfica, título enorme), D (círculos superpuestos sobre azul tinta) y E (lino con etiqueta). La portada con foto se descartó.
 - **Interior del libro:** Cormorant es la letra sugerida, pero el usuario elige entre Cormorant, Caslon, Lora y Fraunces. Nombre, fecha y hora de cada mensaje son casillas separadas (por defecto: nombre y fecha).
+- **Interfaz:** "estudio oscuro creativo"; acento lila `#b6a6ff`, ámbar `#ffc56b` para lo sugerido. Tokens en `src/app/globals.css`.
 
-## Arquitectura prevista
+## Comandos
 
-- Next.js (App Router), TypeScript y Tailwind, en un solo servicio.
-- `src/options/`: esquemas zod con todas las opciones y sus valores base. Desde ellos se generan el panel de la UI y la validación del servidor.
-- `src/design/`: motor de diseño compartido (paletas, parejas de fuentes, texturas y ornamentos). `fit.ts` decide formato, tamaño de letra y división en carrusel según la longitud del texto, sin IA.
-- `src/import/`: importadores de WhatsApp (.txt o .zip, formatos de Android e iOS, fechas en español), .docx (mammoth), .pdf, .txt y texto pegado. Todos producen un modelo común `Bloque[]`.
-- Renderizado con Playwright/Chromium: PNG a 2x (por ejemplo, 2160×2700) y PDF con Paged.js. El EPUB se genera con JSZip.
-- IA: Claude API con salida estructurada. `claude-sonnet-5-5` para el brief de diseño y `claude-haiku-5-5` para el texto de la publicación y los hashtags.
-- Persistencia: SQLite con Drizzle, y archivos en `/data`.
-- Acceso protegido por una contraseña única en una variable de entorno.
-- Despliegue: Docker sobre la imagen de Playwright, en Dokploy.
+```bash
+pnpm dev            # servidor de desarrollo
+pnpm test           # Vitest: unidad + integración con Chromium real
+pnpm typecheck      # next typegen + tsc
+pnpm lint
+pnpm build
+docker compose up -d --build
+```
 
-## Alcance de la v1
+`EPUBCHECK_JAR=/ruta/epubcheck.jar pnpm test` valida además el EPUB. `RENDER_OUT=/carpeta` guarda los PNG y PDF de las pruebas para revisarlos.
 
-- Imágenes: formatos 4:5, 1:1, 9:16 y carrusel; 4 variaciones por texto con ajuste fino; marca personal opcional; texto de la publicación, hashtags, generación en lote y galería.
-- Libros: WhatsApp maquetado tal cual, **un mensaje por página**. El chat con burbujas queda para la v2.
+## Arquitectura
+
+- **Next.js 16** (App Router) + TypeScript + Tailwind 4. Ojo: el middleware se llama `src/proxy.ts` en esta versión; lee `node_modules/next/dist/docs/` antes de usar APIs de Next.
+- `src/design/`: motor de imágenes compartido entre cliente y servidor.
+  - `fit.ts`: lectura determinista del texto (longitud, formato sugerido, carrusel, destacado).
+  - `fonts.ts` y `palettes.ts`: registros (fuentes de @fontsource, paletas con roles fijos).
+  - `templates/`: las 8 plantillas como componentes React con estilos en línea; `autofit.ts` ajusta la letra.
+  - `compose.ts`: esquema de opciones (zod), valores sugeridos, propuestas y diapositivas.
+- `src/lib/render/`: Chromium compartido (Playwright). Los documentos se sirven desde un origen virtual (`http://appear.local/`) con fuentes y archivos locales. `image.ts` renderiza las mismas plantillas con `react-dom/server`.
+- `src/lib/ai/`: `detect.ts` detecta el proveedor por la key; `client.ts` usa el SDK oficial de Anthropic (salida estructurada) y HTTP directo para OpenAI/compatibles y Gemini; `tasks.ts` contiene los prompts.
+- `src/import/`: importadores (WhatsApp, texto, docx con mammoth, pdf con unpdf) hacia el modelo `Block` de `src/book/model.ts`.
+- `src/book/`: opciones y paletas del libro, `structure.ts` (capítulos deterministas), `covers.ts`, `html.ts` + `paginate.js.ts` (documento único para vista previa, PDF y PNG; el paginador corre en el navegador), `epub.ts`, `service.ts`.
+- Persistencia en archivos bajo `DATA_DIR` (por defecto `./data`): `settings.json`, `gallery/<id>/`, `books/<id>/book.json` + `media/`. No hay base de datos.
+- Acceso con contraseña única (`APP_PASSWORD`, Basic Auth en `src/proxy.ts`).
 
 ## Convenciones
 
-- La UI, los textos y la documentación van en español.
-- La UI de la app sigue el estilo "estudio oscuro creativo": fondo oscuro para que los diseños generados destaquen.
-- Los importadores y `fit.ts` se prueban con Vitest. Los flujos de punta a punta (dimensiones del PNG, páginas del PDF, validez del EPUB) se prueban con Playwright.
+- La UI, los textos, los comentarios y la documentación van en español.
+- Cada opción nueva entra en el esquema zod correspondiente con su valor sugerido y aparece en el panel; si usa IA, lleva su casilla, apagada por defecto.
+- Las plantillas y portadas nuevas se prueban renderizándolas (`test/render-*.test.ts`) y mirando el resultado.
+- La versión de `playwright` en `package.json` debe coincidir con la imagen base del `Dockerfile`.
