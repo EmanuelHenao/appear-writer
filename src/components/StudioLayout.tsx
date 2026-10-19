@@ -21,9 +21,12 @@ export function StudioLayout({
   navExtra,
   aside,
   footer,
+  stickyPreview = false,
   children,
 }: {
   steps: Step[];
+  /** En móvil, la vista previa va arriba y se queda fija al hacer scroll. */
+  stickyPreview?: boolean;
   navExtra?: ReactNode;
   aside: ReactNode;
   footer: ReactNode;
@@ -56,7 +59,13 @@ export function StudioLayout({
         <div className="scroll-thin flex min-h-0 flex-1 flex-col gap-7 px-6 pb-6 pt-5 lg:overflow-y-auto">{aside}</div>
         <div className="sticky bottom-0 z-10 flex-none border-t border-line bg-panel px-6 py-3.5">{footer}</div>
       </aside>
-      <section className="flex min-h-0 min-w-0 flex-col gap-4 px-4 py-5 sm:px-8">{children}</section>
+      <section
+        className={`flex min-h-0 min-w-0 flex-col gap-4 px-4 py-5 sm:px-8 ${
+          stickyPreview ? "max-lg:sticky max-lg:top-0 max-lg:z-20 max-lg:order-first max-lg:gap-2.5 max-lg:border-b max-lg:border-line max-lg:bg-ink/95 max-lg:py-3 max-lg:backdrop-blur" : ""
+        }`}
+      >
+        {children}
+      </section>
     </main>
   );
 }

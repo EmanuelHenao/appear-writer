@@ -693,11 +693,12 @@ export function BookStudio() {
       }
       aside={aside}
       footer={footer}
+      stickyPreview={hasSources}
     >
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="eyebrow">Paso 3 · Vista previa{pages ? ` · ${pages.toLocaleString("es")} págs.` : ""}</div>
-          <h2 className="mt-1 font-display text-xl font-bold">{o?.cover.title || "Tu libro"}</h2>
+          <h2 className="mt-1 font-display text-xl font-bold max-lg:hidden">{o?.cover.title || "Tu libro"}</h2>
         </div>
         {hasSources ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -747,9 +748,9 @@ export function BookStudio() {
           </div>
         ) : null}
       </div>
-      <div className="min-h-[520px] flex-1 overflow-hidden rounded-2xl bg-panel lg:min-h-0">
+      <div className={`flex-1 overflow-hidden rounded-2xl bg-panel lg:min-h-0 ${hasSources ? "max-lg:h-[40vh] max-lg:flex-none" : "min-h-[520px]"}`}>
         {hasSources && book ? (
-          <iframe ref={frame} key={version} title="Vista previa del libro" src={`/api/books/${book.id}/preview?limite=40&v=${version}`} className="h-full min-h-[520px] w-full border-0 lg:min-h-0" />
+          <iframe ref={frame} key={version} title="Vista previa del libro" src={`/api/books/${book.id}/preview?limite=40&v=${version}`} className="h-full w-full border-0" />
         ) : (
           <div className="flex h-full min-h-[520px] items-center justify-center p-10 text-center text-muted">Aquí aparecerán las páginas de tu libro, a doble página.</div>
         )}

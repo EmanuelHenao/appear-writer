@@ -146,6 +146,40 @@ export const PAGINATE_JS = String.raw`
       var report = function () {
         try { parent.postMessage({ type: "book-view", page: current, shown: shown.length, cols: view.cols, zoom: z }, "*"); } catch (e) {}
       };
+      // Tira de miniaturas al pie: un clic lleva a esa página.
+      var STRIP = 78;
+      var strip = document.createElement("nav");
+      strip.id = "strip";
+      strip.setAttribute("aria-label", "Páginas");
+      strip.style.cssText = "position:fixed;left:0;right:0;bottom:0;height:" + STRIP + "px;display:flex;gap:6px;align-items:center;overflow-x:auto;padding:0 12px;background:rgba(22,21,28,.94);border-top:1px solid #2b2935;z-index:5;scrollbar-width:thin";
+      var thumbs = shown.map(function (p, i) {
+        var h = STRIP - 22, s = h / p.offsetHeight, w = Math.round(p.offsetWidth * s);
+        var b = document.createElement("button");
+        b.type = "button";
+        b.title = "Página " + (i + 1);
+        b.setAttribute("aria-label", "Ir a la página " + (i + 1));
+        b.style.cssText = "flex:none;position:relative;overflow:hidden;padding:0;border:0;border-radius:2px;cursor:pointer;background:none;width:" + w + "px;height:" + h + "px;" + (i > 0 && i % 2 === 1 ? "margin-left:6px;" : "");
+        var c = p.cloneNode(true);
+        c.style.cssText = "position:absolute;left:0;top:0;transform:scale(" + s + ");transform-origin:0 0;box-shadow:none;pointer-events:none;grid-column:auto";
+        b.appendChild(c);
+        b.addEventListener("click", function () { current = i + 1; if (view.cols === 2 && current > 1 && current % 2 === 1) current -= 1; goTo(i + 1); report(); mark(); });
+        strip.appendChild(b);
+        return b;
+      });
+      var mark = function () {
+        thumbs.forEach(function (b, i) {
+          var n = i + 1;
+          var on = n === current || (view.cols === 2 && current > 1 && n === current + 1);
+          b.style.outline = on ? "2px solid #b6a6ff" : "none";
+          b.style.outlineOffset = "2px";
+          if (on && n === current) b.scrollIntoView({ block: "nearest", inline: "nearest" });
+        });
+      };
+      document.body.appendChild(strip);
+      document.body.style.paddingBottom = STRIP + 16 + "px";
+      var baseReport = report;
+      report = function () { baseReport(); mark(); };
+
       var fit = function () {
         var first = shown[0];
         if (!first) return;
@@ -154,7 +188,7 @@ export const PAGINATE_JS = String.raw`
         var cols = view.cols;
         book.style.gridTemplateColumns = "repeat(" + cols + ", var(--pw))";
         first.style.gridColumn = cols === 2 ? "2" : "auto";
-        var fitZ = Math.min((window.innerWidth - 32) / (pw * cols), (window.innerHeight - 32) / ph);
+        var fitZ = Math.min((window.innerWidth - 32) / (pw * cols), (window.innerHeight - 32 - STRIP) / ph);
         z = view.zoom || Math.min(fitZ, 2);
         book.style.zoom = String(z);
         report();

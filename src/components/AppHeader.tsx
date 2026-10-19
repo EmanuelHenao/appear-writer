@@ -17,7 +17,7 @@ export function AppHeader() {
   const path = usePathname();
   const active = (href: string) => path === href || path.startsWith(href + "/");
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-ink/95 backdrop-blur">
+    <header className="z-30 border-b border-line bg-ink/95 backdrop-blur lg:sticky lg:top-0">
       <div className="mx-auto flex min-h-16 max-w-[1600px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 sm:px-8">
         <Link href="/imagenes" className="font-display text-[22px] font-extrabold tracking-tight">
           appear<span className="text-accent">·</span>writer
