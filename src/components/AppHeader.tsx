@@ -18,7 +18,7 @@ export function AppHeader() {
   const active = (href: string) => path === href || path.startsWith(href + "/");
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-ink/95 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-8">
+      <div className="mx-auto flex min-h-16 max-w-[1600px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 sm:px-8">
         <Link href="/imagenes" className="font-display text-[22px] font-extrabold tracking-tight">
           appear<span className="text-accent">·</span>writer
         </Link>
@@ -36,7 +36,7 @@ export function AppHeader() {
             </Link>
           ))}
         </nav>
-        <nav aria-label="Herramientas" className="flex gap-5 text-sm">
+        <nav aria-label="Herramientas" className="flex gap-5 text-sm max-sm:order-last max-sm:w-full max-sm:justify-end">
           {SIDE.map((t) => (
             <Link
               key={t.href}

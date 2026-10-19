@@ -16,7 +16,7 @@ export const LIMITS = {
   media: 220,
   larga: 500,
   /** Caracteres máximos por diapositiva de carrusel. */
-  porDiapositiva: 180,
+  porDiapositiva: 140,
   /** Instagram admite hasta 20; más de 10 deja de leerse bien. */
   maxDiapositivas: 10,
 };

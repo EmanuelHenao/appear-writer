@@ -7,7 +7,7 @@ import path from "node:path";
 // Es una app de una sola persona: JSON por elemento y archivos al lado.
 
 export function dataDir(): string {
-  return path.resolve(process.env.DATA_DIR || path.join(process.cwd(), "data"));
+  return path.resolve(/*turbopackIgnore: true*/ process.env.DATA_DIR || path.join(process.cwd(), "data"));
 }
 
 /** Une segmentos bajo DATA_DIR y se niega a salir de él. */

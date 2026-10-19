@@ -1,3 +1,8 @@
+import type { Metadata } from "next";
+import { SettingsPage } from "./Settings";
+
+export const metadata: Metadata = { title: "Ajustes · Appear Writer" };
+
 export default function Page() {
-  return <main className="p-8 text-muted">En construcción.</main>;
+  return <SettingsPage />;
 }

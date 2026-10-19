@@ -35,13 +35,13 @@ export const SettingsSchema = z.object({
   brand: z
     .object({
       handle: z.string().default(""),
-      hasLogo: z.boolean().default(false),
+      logoFile: z.string().default(""),
       colors: z
         .object({ bg: z.string(), fg: z.string(), accent: z.string() })
         .default({ bg: "#111111", fg: "#F7F4EE", accent: "#B6A6FF" }),
       font: z.string().default("bricolage"),
     })
-    .default({ handle: "", hasLogo: false, colors: { bg: "#111111", fg: "#F7F4EE", accent: "#B6A6FF" }, font: "bricolage" }),
+    .default({ handle: "", logoFile: "", colors: { bg: "#111111", fg: "#F7F4EE", accent: "#B6A6FF" }, font: "bricolage" }),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -108,8 +108,22 @@ export function publicSettings(s: Settings) {
       unsplashMasked: maskKey(keys.unsplash),
       pexelsMasked: maskKey(keys.pexels),
     },
-    brand: s.brand,
+    brand: { ...s.brand, logoUrl: logoUrl(s) },
   };
 }
 
 export type PublicSettings = ReturnType<typeof publicSettings>;
+
+export function logoUrl(s: Settings): string | undefined {
+  return s.brand.logoFile ? `/api/files/brand/${s.brand.logoFile}` : undefined;
+}
+
+/** Recursos de marca listos para componer diapositivas. */
+export function brandAssets(s: Settings) {
+  return {
+    handle: s.brand.handle,
+    logoUrl: logoUrl(s),
+    colors: s.brand.colors,
+    font: s.brand.font,
+  };
+}
