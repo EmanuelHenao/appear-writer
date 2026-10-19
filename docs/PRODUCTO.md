@@ -272,7 +272,8 @@ Las tildes que dependen del sentido de la frase (esta/está, si/sí, tu/tú) no 
 - **Zoom:** − y + amplían o reducen; «Ajustar» encaja la página o el pliego entero en la ventana.
 - **Tira de miniaturas** al pie: un clic lleva a esa página y la página actual queda resaltada.
 - **La vista elegida se mantiene** al cambiar opciones.
-- **Límite:** la vista previa muestra 40 páginas: las primeras o, si eliges un mensaje que cae más adelante, las que lo rodean. El número de página es siempre el real («306–307 / 648») y el archivo final las incluye todas.
+- **Todo el libro, 40 páginas a la vez:** la vista previa tiene el libro entero y muestra una ventana de 40 páginas que se mueve sola al pasar de página, al elegir un mensaje o al usar las miniaturas. El número de página es siempre el real («306–307 / 648»).
+- **Al editar no se recarga:** cuando cambias algo en el paso Contenido, solo se vuelve a maquetar el capítulo afectado; los números de página, las cabeceras y el índice se actualizan y la vista se queda donde estabas (o va a la página que acabas de añadir). Los cambios de opciones del libro (letra, tamaño, paleta…) sí recargan la vista previa entera.
 - **Clic en un mensaje** abre su ficha en el paso Contenido.
 
 ### Generar libro
@@ -329,7 +330,6 @@ Las tildes que dependen del sentido de la frase (esta/está, si/sí, tu/tú) no 
 
 ## 10. Limitaciones conocidas
 
-- La vista previa del libro muestra 40 páginas a la vez (alrededor del mensaje elegido).
 - En el EPUB los diseños especiales se simplifican (la cita va como cita en su página y las fotos completas como fotos con su texto) y la letra elegida por tramo no viaja: se usa la del libro.
 - Si quitas una fuente y la vuelves a subir, lo decidido sobre sus mensajes no se recupera.
 - En el lote no hay fondos de foto ni fondo IA.
@@ -345,4 +345,5 @@ Las tildes que dependen del sentido de la frase (esta/está, si/sí, tu/tú) no 
 | v3 | Patrones generativos, botón Aleatorio con Anterior, 4 al azar y Mis plantillas. |
 | v4 | Estudio en dos columnas con la vista previa fija, opciones plegables con resumen, visor del libro a doble página con zoom y navegación, e iconos de línea. |
 | v6 | Paso Contenido en Libros: lista con filtros y selección múltiple, ficha de cada mensaje (ocultar, destacar, capítulo aquí, diseños Cita / Foto completa / Foto + texto, fotos una a una, texto con formato), páginas añadidas (separador, página libre, imagen, en blanco), sugerencias sin IA clic en la vista previa y panel de atajos (?). |
+| v7 | Ficha y sugerencias en una hoja desde abajo en el móvil, y vista previa que se actualiza por capítulos al editar, sin recargar ni parpadear. |
 | v5 | Texto de publicación y hashtags sin IA, capítulos por año o por silencios, fotos propias, ortografía sin IA, atajos R y Ctrl+Z, vista previa fija en móvil, miniaturas del libro, lote ajustable e imagen Docker de 1,3 GB. |

@@ -55,7 +55,7 @@ export function BookStudio() {
   // Visor de la vista previa (lo maneja el propio documento del libro).
   const frame = useRef<HTMLIFrameElement>(null);
   const wanted = useRef<{ cols: 1 | 2; zoom: number; page: number }>({ cols: 2, zoom: 0, page: 1 });
-  const [view, setView] = useState({ cols: 2 as 1 | 2, zoom: 1, fit: true, page: 1, offset: 0, total: 0 });
+  const [view, setView] = useState({ cols: 2 as 1 | 2, zoom: 1, fit: true, page: 1, total: 0 });
   const [shown, setShown] = useState(0);
   const [paste, setPaste] = useState({ open: false, text: "", title: "" });
   const [drag, setDrag] = useState(false);
@@ -65,7 +65,9 @@ export function BookStudio() {
   const [selected, setSelected] = useState<string | null>(null);
   const [panel, setPanel] = useState<"lista" | "ficha" | "sugerencias">("lista");
   const [pickPage, setPickPage] = useState<number | null>(null);
-  const [loadFocus, setLoadFocus] = useState<string>("");
+  // Fuentes cargadas en la vista previa: si el texto con formato pide otra, hay que recargarla entera.
+  const loadedFonts = useRef("");
+  const patching = useRef<{ running: boolean; again: boolean }>({ running: false, again: false });
   const selectedRef = useRef<string | null>(null);
   const editsRef = useRef<BookEdits>(emptyEdits());
   const history = useRef<{ edits: BookEdits; tag?: string; at: number }[]>([]);
@@ -102,6 +104,7 @@ export function BookStudio() {
       const win = frame.current.contentWindow;
       if (e.data?.type === "book-ready") {
         setPages(e.data.pages);
+        loadedFonts.current = runFonts(editsRef.current);
         // La vista elegida y el bloque elegido se mantienen al recargar la vista previa.
         const w = wanted.current;
         if (w.cols !== 2 || w.zoom) win?.postMessage({ type: "book-control", cols: w.cols, zoom: w.zoom }, "*");
@@ -111,7 +114,7 @@ export function BookStudio() {
       if (e.data?.type === "book-view") {
         setShown(e.data.shown);
         wanted.current.page = e.data.page;
-        setView({ cols: e.data.cols, zoom: e.data.zoom, fit: wanted.current.zoom === 0, page: e.data.page, offset: e.data.offset ?? 0, total: e.data.total ?? e.data.shown });
+        setView({ cols: e.data.cols, zoom: e.data.zoom, fit: wanted.current.zoom === 0, page: e.data.page, total: e.data.total ?? e.data.shown });
       }
       if (e.data?.type === "book-key" && typeof e.data.key === "string") {
         const d = e.data;
@@ -124,14 +127,9 @@ export function BookStudio() {
         setPickPage(e.data.page || null);
         toTop();
       }
-      if (e.data?.type === "book-focus" && e.data.key === selectedRef.current) {
-        if (e.data.found) setPickPage(e.data.page || null);
-        else {
-          // Fuera de las páginas que muestra la vista previa: se recarga centrada en él.
-          setLoadFocus(e.data.key);
-          setVersion((v) => v + 1);
-        }
-      }
+      // Si aún no está (una página recién añadida), aparece en cuanto se actualice la vista previa.
+      if (e.data?.type === "book-focus" && e.data.key === selectedRef.current && e.data.found) setPickPage(e.data.page || null);
+      if (e.data?.type === "book-patched") setPages(e.data.pages);
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
@@ -209,17 +207,46 @@ export function BookStudio() {
     [book],
   );
 
+  /**
+   * Actualiza la vista previa sin recargarla: pide las secciones del libro y
+   * el documento repagina solo las que cambiaron. Las peticiones no se pisan.
+   */
+  const refreshPreview = useCallback(async (id: string) => {
+    const fonts = runFonts(editsRef.current);
+    if (fonts !== loadedFonts.current) {
+      loadedFonts.current = fonts;
+      setVersion((v) => v + 1);
+      return;
+    }
+    const q = patching.current;
+    if (q.running) {
+      q.again = true;
+      return;
+    }
+    q.running = true;
+    try {
+      do {
+        q.again = false;
+        const res = await fetch(`/api/books/${id}/preview?formato=secciones`);
+        if (!res.ok) break;
+        const { segments } = await res.json();
+        frame.current?.contentWindow?.postMessage({ type: "book-control", patch: segments }, "*");
+      } while (q.again);
+    } finally {
+      q.running = false;
+    }
+  }, []);
+
   const saveEdits = useCallback(async (id: string, edits: BookEdits) => {
     const res = await fetch(`/api/books/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ edits }) });
     if (!res.ok) {
       setMsg({ tone: "error", text: (await res.json().catch(() => ({}))).error ?? "No se pudo guardar." });
       return;
     }
-    if (editsRef.current === edits) {
-      setLoadFocus(selectedRef.current ?? "");
-      setVersion((v) => v + 1);
-    }
-  }, []);
+    if (editsRef.current === edits) void refreshPreview(id);
+  }, [refreshPreview]);
+
+
 
   /** Cambia el contenido al momento y lo guarda medio segundo después. `tag` agrupa las pulsaciones al escribir para deshacer. */
   const setEdits = useCallback(
@@ -849,14 +876,14 @@ export function BookStudio() {
     </>
   );
 
-  const real = view.page + view.offset;
-  const pairs = view.cols === 2 && (view.offset ? true : view.page > 1) && view.page < shown;
-  const pageLabel = !shown ? "" : pairs ? `${real}–${real + 1}` : String(real);
+  // La vista previa recorre todo el libro: los números de página son los reales.
+  const total = view.total || shown;
+  const pairs = view.cols === 2 && view.page > 1 && view.page < total;
+  const pageLabel = !shown ? "" : pairs ? `${view.page}–${view.page + 1}` : String(view.page);
   const step = (dir: 1 | -1) => {
     const p = view.page;
-    const next =
-      view.cols === 1 ? p + dir : view.offset ? p + 2 * dir : dir === 1 ? (p === 1 ? 2 : p + 2) : p <= 2 ? 1 : p - 2;
-    control({ goto: Math.max(1, Math.min(shown, next)) });
+    const next = view.cols === 1 ? p + dir : dir === 1 ? (p === 1 ? 2 : p + 2) : p <= 2 ? 1 : p - 2;
+    control({ goto: Math.max(1, Math.min(total, next)) });
   };
 
   const asideNow =
@@ -938,9 +965,9 @@ export function BookStudio() {
                   className="min-w-20 text-center font-mono text-xs tabular-nums"
                   title={pages && shown && pages > shown ? `La vista previa muestra las primeras ${shown} de ${pages} páginas` : undefined}
                 >
-                  {pageLabel} / {view.total || shown || "…"}
+                  {pageLabel} / {total || "…"}
                 </span>
-                <IconBtn label="Página siguiente" disabled={!shown || (pairs ? view.page + 1 : view.page) >= shown} onClick={() => step(1)}>
+                <IconBtn label="Página siguiente" disabled={!shown || (pairs ? view.page + 1 : view.page) >= total} onClick={() => step(1)}>
                   <ChevronRight />
                 </IconBtn>
               </div>
@@ -969,7 +996,7 @@ export function BookStudio() {
               ref={frame}
               key={version}
               title="Vista previa del libro"
-              src={`/api/books/${book.id}/preview?limite=40&v=${version}${loadFocus ? `&foco=${encodeURIComponent(loadFocus)}` : ""}`}
+              src={`/api/books/${book.id}/preview?limite=40&v=${version}`}
               className="h-full w-full border-0"
             />
           ) : (
@@ -1080,6 +1107,14 @@ function toTop() {
     const sheet = document.getElementById("sheet-body");
     if (sheet) sheet.scrollTop = 0;
   });
+}
+
+/** Las letras que usa el texto con formato (la vista previa las carga al abrirse). */
+function runFonts(edits: BookEdits): string {
+  const set = new Set<string>();
+  for (const e of Object.values(edits.blocks)) for (const r of e.runs ?? []) if (r.font) set.add(r.font);
+  for (const i of edits.inserts) for (const r of i.runs ?? []) if (r.font) set.add(r.font);
+  return [...set].sort().join(",");
 }
 
 function safeGet(k: string): string | null {

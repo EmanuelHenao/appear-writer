@@ -228,7 +228,8 @@ function ornament(o: BookOptions, glyph: string) {
 function chapterOpener(c: Chapter, i: number, total: number, input: BookDocInput, own: boolean): string {
   const o = input.options;
   const photo = o.content.stockPhotos && input.stock?.length ? input.stock[i % input.stock.length] : null;
-  const eyebrow = total > 1 ? `<div class="ch-eyebrow">Capítulo ${roman(i + 1)}</div>` : "";
+  // El paginador escribe «Capítulo N» al final, así cada capítulo no depende de su posición.
+  const eyebrow = total > 1 ? `<div class="ch-eyebrow" data-roman></div>` : "";
   const inner = `${photo ? `<figure class="ch-photo"><img src="${esc(photo.url)}" alt=""></figure>` : ""}
     <div class="ch-head">${eyebrow}<h2 class="ch-title">${esc(c.title)}</h2>${ornament(o, "❧")}${c.subtitle ? `<div class="ch-sub">${esc(c.subtitle)}</div>` : ""}</div>
     ${photo?.credit ? `<div class="credit">Foto: ${esc(photo.credit)}</div>` : ""}`;
@@ -238,14 +239,34 @@ function chapterOpener(c: Chapter, i: number, total: number, input: BookDocInput
     : `<div class="chapter-flow" data-newpage="1" data-page-class="text chapter-start nohead" ${attrs}>${inner}</div>`;
 }
 
-export function buildBookHtml(input: BookDocInput): string {
+/** Huella corta de una sección: si no cambia, la vista previa no la vuelve a paginar. */
+function hashOf(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36) + text.length.toString(36);
+}
+
+export interface BookSegment {
+  key: string;
+  hash: string;
+  html: string;
+}
+
+/**
+ * El libro en secciones: el principio (portada, portadilla, dedicatoria e
+ * índice) y cada capítulo. Cada sección empieza en página nueva.
+ */
+export function bookSegments(input: BookDocInput): BookSegment[] {
   const o = input.options;
   const p = bookPalette(o.palette);
-  const g = pageGeometry(o);
   const serif = fontStack(o.font as FontId);
-  const pt = BODY_PT[o.fontScale] * (o.pageSize === "cuadrado" ? 1.08 : 1);
   const chapters = input.chapters.filter((c) => c.blocks.length);
-  const items: string[] = [];
+  const segments: { key: string; items: string[] }[] = [];
+  let items: string[] = [];
+  segments.push({ key: "_inicio", items });
 
   items.push(`<div data-mode="own" data-page-class="cover nofolio nohead">${coverHtml(o, p, serif)}</div>`);
   if (o.content.titlePage) {
@@ -269,6 +290,8 @@ export function buildBookHtml(input: BookDocInput): string {
   }
 
   chapters.forEach((c, i) => {
+    items = [];
+    segments.push({ key: c.key, items });
     const isChat = c.blocks.some((b) => b.type === "message");
     const own = (isChat && o.content.onePerPage && !o.content.bubbles) || (o.content.stockPhotos && !!input.stock?.length);
     items.push(chapterOpener(c, i, chapters.length, input, own));
@@ -285,6 +308,19 @@ export function buildBookHtml(input: BookDocInput): string {
       if (b.type === "paragraph") first = false;
     }
   });
+  return segments.map((sg) => {
+    const html = sg.items.join("\n");
+    return { key: sg.key, hash: hashOf(html), html };
+  });
+}
+
+export function buildBookHtml(input: BookDocInput): string {
+  const o = input.options;
+  const p = bookPalette(o.palette);
+  const g = pageGeometry(o);
+  const serif = fontStack(o.font as FontId);
+  const pt = BODY_PT[o.fontScale] * (o.pageSize === "cuadrado" ? 1.08 : 1);
+  const segments = bookSegments(input);
 
   const m = g.margin;
   const css = `
@@ -409,6 +445,7 @@ body { font-family: ${serif}; color: var(--ink); font-size: ${pt}pt; line-height
 body.previewing [data-key] { cursor: pointer; }
 body.previewing [data-key]:hover { outline: 0.3mm dashed rgba(124, 104, 230, 0.55); outline-offset: 1.5mm; }
 body.previewing .picked { outline: 0.5mm solid #8f7cf0 !important; outline-offset: 1.5mm; box-shadow: 0 0 0 2.2mm rgba(182, 166, 255, 0.28); border-radius: 0.6mm; }
+@media screen { .page.off { display: none; } }
 .preview-note { grid-column: 1 / -1; text-align: center; color: #cfc9da; font-family: system-ui, sans-serif; font-size: 13px; }
 
 @media screen {
@@ -425,7 +462,7 @@ body.previewing .picked { outline: 0.5mm solid #8f7cf0 !important; outline-offse
 <body data-title="${esc(o.cover.title)}" data-preview-limit="${input.previewLimit ?? 0}"${input.focusKey ? ` data-focus="${esc(input.focusKey)}"` : ""}>
 <template id="page-tpl"><section class="page"><div class="inner"><div class="head"><span class="h-left"></span><span class="h-right"></span></div><div class="body"></div><div class="folio"></div></div></section></template>
 <main id="book"></main>
-<div id="flow">${items.join("\n")}</div>
+<div id="flow">${segments.map((sg) => `<div data-seg="${esc(sg.key)}" data-hash="${sg.hash}">${sg.html}</div>`).join("\n")}</div>
 <script>${PAGINATE_JS}</script>
 </body></html>`;
 }

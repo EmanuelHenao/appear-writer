@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Source } from "@/book/model";
 import { suggestedBookOptions } from "@/book/options";
 import type { BookProject } from "@/book/project";
-import { bookHtml, exportEpub, exportPdf, exportPngs } from "@/book/service";
+import { bookHtml, exportEpub, exportPdf, exportPngs, previewSegments } from "@/book/service";
 import { parsePlainText } from "@/import/text";
 import { parseWhatsApp } from "@/import/whatsapp";
 import { importFile } from "@/import";
@@ -235,6 +235,53 @@ describe("render del libro", () => {
     expect(bold.pages).toBeGreaterThanOrEqual(2);
     // Siguen todos los caracteres en negrita, menos los espacios que se recortan al partir.
     expect(bold.chars).toBeGreaterThan(boldLen - 10);
+  });
+
+  it("v7: al editar, la vista previa repagina solo las secciones que cambian y queda igual que recargada", async () => {
+    const src = chatSource();
+    const book = project([src]);
+    const open = async (html: string) => openDoc({ html, width: 1200, height: 900, scale: 1, media: "screen", readySelector: "body[data-ready]" });
+    const { page, context } = await open(await bookHtml(book, "preview", 6));
+    const before = await page.evaluate(() => (window as unknown as { __BOOK_READY__: { pages: number } }).__BOOK_READY__.pages);
+
+    // Se oculta un mensaje de abril y se añade una página en blanco: cambian el índice y ese capítulo.
+    const april = src.blocks.findIndex((b) => b.type === "message" && b.date?.startsWith("2024-04"));
+    book.edits = {
+      blocks: { [`chat1:${april}`]: { hidden: true } },
+      inserts: [{ id: "b1", at: `chat1:${april + 1}`, side: "antes", kind: "blanco" }],
+    };
+    const segments = await previewSegments(book);
+    const patched = await page.evaluate(
+      (segs) =>
+        new Promise<{ pages: number; changed: number; folios: string[]; toc: string[] }>((resolve) => {
+          window.addEventListener("message", (e) => {
+            if (e.data?.type !== "book-patched") return;
+            const pages = Array.from(document.querySelectorAll("#book > .page"));
+            resolve({
+              pages: e.data.pages,
+              changed: e.data.changed,
+              folios: pages.map((p) => (p as HTMLElement).dataset.n ?? ""),
+              toc: Array.from(document.querySelectorAll("#book .toc-entry .pn")).map((x) => x.textContent ?? ""),
+            });
+          });
+          window.postMessage({ type: "book-control", patch: segs }, "*");
+        }),
+      segments,
+    );
+    await context.close();
+    // Solo se repagina el capítulo de abril; los números del índice los pone el paginador.
+    expect(patched.changed).toBe(1);
+    expect(patched.folios).toEqual(patched.folios.map((_, i) => String(i + 1)));
+
+    const fresh = await open(await bookHtml(book, "preview", 6));
+    const ref = await fresh.page.evaluate(() => ({
+      pages: (window as unknown as { __BOOK_READY__: { pages: number } }).__BOOK_READY__.pages,
+      toc: Array.from(document.querySelectorAll("#book .toc-entry .pn")).map((x) => x.textContent ?? ""),
+    }));
+    await fresh.context.close();
+    expect(patched.pages).toBe(ref.pages);
+    expect(patched.pages).toBe(before);
+    expect(patched.toc).toEqual(ref.toc);
   });
 
   it("la vista previa corta en el límite de páginas", async () => {
