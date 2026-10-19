@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Shortcuts, type ShortcutGroup } from "@/components/Shortcuts";
 import { SlidePreview } from "@/components/SlidePreview";
 import { Dice, Download, Star, Undo } from "@/components/icons";
 import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
@@ -843,7 +844,7 @@ export function ImageStudio() {
   );
 
   return (
-    <StudioLayout steps={steps} aside={aside} footer={footer} stickyPreview={mode === "una" && !!designs && !!edit}>
+    <StudioLayout steps={steps} navExtra={<Shortcuts groups={IMAGE_SHORTCUTS} />} aside={aside} footer={footer} stickyPreview={mode === "una" && !!designs && !!edit}>
       {mode === "lote" ? (
         <>
           <div>
@@ -1351,3 +1352,15 @@ function PatternTune({
     </div>
   );
 }
+
+const IMAGE_SHORTCUTS: ShortcutGroup[] = [
+  {
+    title: "Propuestas",
+    items: [
+      { keys: ["←", "→"], label: "Propuesta anterior o siguiente" },
+      { keys: ["R"], label: "Un diseño al azar" },
+      { keys: ["Ctrl", "Z"], label: "Volver al diseño anterior" },
+    ],
+  },
+  { title: "Ayuda", items: [{ keys: ["?"], label: "Abrir o cerrar este panel" }] },
+];

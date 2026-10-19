@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus } from "@/components/icons";
 import { OwnPhotos } from "@/components/OwnPhotos";
+import { Shortcuts, type ShortcutGroup } from "@/components/Shortcuts";
 import { SpellCheck } from "./SpellCheck";
 import { ContentStep } from "./ContentStep";
 import { MessageInspector } from "./MessageInspector";
@@ -891,9 +892,12 @@ export function BookStudio() {
     <StudioLayout
       steps={steps}
       navExtra={
-        <Link href="/galeria" className="text-accent hover:underline">
-          Libros guardados
-        </Link>
+        <span className="flex items-center gap-2">
+          <Shortcuts groups={BOOK_SHORTCUTS} />
+          <Link href="/galeria" className="text-accent hover:underline">
+            Libros guardados
+          </Link>
+        </span>
       }
       aside={asideNow}
       footer={footer}
@@ -968,6 +972,38 @@ export function BookStudio() {
     </StudioLayout>
   );
 }
+
+const BOOK_SHORTCUTS: ShortcutGroup[] = [
+  {
+    title: "Contenido",
+    items: [
+      { keys: ["Clic"], label: "Elegir un mensaje en la vista previa o la lista" },
+      { keys: ["←", "→"], label: "Mensaje anterior o siguiente" },
+      { keys: ["H"], label: "Ocultar o mostrar el mensaje" },
+      { keys: ["D"], label: "Destacar como cita" },
+      { keys: ["Esc"], label: "Volver a la lista" },
+      { keys: ["Ctrl", "Z"], label: "Deshacer la última decisión" },
+      { keys: ["Mayús", "Clic"], label: "Marcar un tramo de la lista" },
+    ],
+  },
+  {
+    title: "Texto con formato",
+    items: [
+      { keys: ["Ctrl", "B"], label: "Negrita" },
+      { keys: ["Ctrl", "I"], label: "Cursiva" },
+      { keys: ["Ctrl", "U"], label: "Subrayado" },
+    ],
+  },
+  {
+    title: "Vista previa",
+    items: [
+      { keys: ["‹", "›"], label: "Página o pliego anterior y siguiente" },
+      { keys: ["−", "+"], label: "Alejar y acercar; «Ajustar» encaja la página" },
+      { keys: ["Miniatura"], label: "Ir a esa página" },
+    ],
+  },
+  { title: "Ayuda", items: [{ keys: ["?"], label: "Abrir o cerrar este panel" }] },
+];
 
 function contentSummary(o: BookOptions, hasChats: boolean): string {
   if (hasChats) {

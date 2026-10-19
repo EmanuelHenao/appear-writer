@@ -33,6 +33,7 @@ Estas reglas se cumplen en toda la app:
   - **Columna derecha:** la vista previa. Nunca se mueve.
 - **Secciones de opciones plegables:** cada título muestra a la derecha lo que hay elegido (por ejemplo, «Fondo ● El del estilo · Textura · Patrón»). Así se lee el panel entero sin abrir nada. Solo la primera sección viene abierta.
 - **«Volver a lo sugerido»:** devuelve todas las opciones a sus valores base.
+- **Atajos:** el botón «? Atajos» de la barra de pasos (o la tecla ?) abre un panel con todos los atajos y controles del estudio. Se abre encima, sin modal, y se cierra con ? o Esc sin perder lo que estás editando.
 - **Móvil:** las columnas se apilan. La vista previa sube arriba y se queda fija mientras bajas por las opciones, y el botón principal sigue fijo abajo.
 
 ## 4. Estudio de Imágenes
@@ -343,5 +344,5 @@ Las tildes que dependen del sentido de la frase (esta/está, si/sí, tu/tú) no 
 | v2 | Burbujas de chat en los libros y cuatro plantillas de imagen nuevas: Titular, Franja, Marco y Cuaderno. |
 | v3 | Patrones generativos, botón Aleatorio con Anterior, 4 al azar y Mis plantillas. |
 | v4 | Estudio en dos columnas con la vista previa fija, opciones plegables con resumen, visor del libro a doble página con zoom y navegación, e iconos de línea. |
-| v6 | Paso Contenido en Libros: lista con filtros y selección múltiple, ficha de cada mensaje (ocultar, destacar, capítulo aquí, diseños Cita / Foto completa / Foto + texto, fotos una a una, texto con formato), páginas añadidas (separador, página libre, imagen, en blanco), sugerencias sin IA y clic en la vista previa. |
+| v6 | Paso Contenido en Libros: lista con filtros y selección múltiple, ficha de cada mensaje (ocultar, destacar, capítulo aquí, diseños Cita / Foto completa / Foto + texto, fotos una a una, texto con formato), páginas añadidas (separador, página libre, imagen, en blanco), sugerencias sin IA clic en la vista previa y panel de atajos (?). |
 | v5 | Texto de publicación y hashtags sin IA, capítulos por año o por silencios, fotos propias, ortografía sin IA, atajos R y Ctrl+Z, vista previa fija en móvil, miniaturas del libro, lote ajustable e imagen Docker de 1,3 GB. |
