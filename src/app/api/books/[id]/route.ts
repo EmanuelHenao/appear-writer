@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BookEditsSchema } from "@/book/edits";
 import { BookOptionsSchema } from "@/book/options";
 import { deleteBook, getBook, refreshSuggestions, saveBook } from "@/book/project";
 import { errorResponse, fail } from "@/lib/http";
@@ -23,6 +24,7 @@ const Patch = z.object({
     })
     .optional(),
   clearAi: z.enum(["chapters", "spelling", "all"]).optional(),
+  edits: BookEditsSchema.optional(),
 });
 
 export async function PATCH(req: Request, ctx: RouteContext<"/api/books/[id]">) {
@@ -53,6 +55,7 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/books/[id]">) 
       if (s) s.name = p.renameSource.name;
     }
     if (p.stock) book.stock = p.stock;
+    if (p.edits) book.edits = p.edits;
     if (p.clearAi === "chapters" || p.clearAi === "all") {
       delete book.ai.chapterTitles;
       delete book.ai.breaks;

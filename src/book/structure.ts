@@ -1,4 +1,5 @@
 import type { Block, Source } from "./model";
+import { emptyEdits, mapRunText, runsToPlain, type BlockEdit, type BookEdits, type Insert } from "./edits";
 import { applyFixes } from "./fixes";
 import { chapterRuleOf, type BookOptions, type ChapterRule } from "./options";
 
@@ -14,7 +15,8 @@ export interface AiResults {
   corrections?: Record<string, string>;
 }
 
-export type KeyedBlock = Block & { key: string };
+/** Bloque listo para maquetar: con su clave, su ajuste y las páginas añadidas. */
+export type KeyedBlock = (Block | { type: "insert"; insert: Insert }) & { key: string; edit?: BlockEdit };
 
 export interface Chapter {
   key: string;
@@ -145,13 +147,13 @@ function proseChapters(src: Source, breaks?: { inicio: number; titulo: string }[
   return chapters.filter((c) => c.blocks.length);
 }
 
-export function buildChapters(sources: Source[], options: BookOptions, ai: AiResults = {}): Chapter[] {
-  const chapters = sources.flatMap((s) =>
+export function buildChapters(sources: Source[], options: BookOptions, ai: AiResults = {}, edits: BookEdits = emptyEdits()): Chapter[] {
+  const auto = sources.flatMap((s) =>
     s.kind === "whatsapp"
       ? chatChapters(s, chapterRuleOf(options), options.content.silenceDays)
       : proseChapters(s, options.ai.chapters ? ai.breaks?.[s.id] : undefined),
   );
-  for (const c of chapters) {
+  for (const c of auto) {
     if (options.ai.chapters && ai.chapterTitles?.[c.key]) {
       if (c.subtitle === undefined) c.subtitle = c.title;
       else c.subtitle = `${c.title} · ${c.subtitle}`;
@@ -162,11 +164,68 @@ export function buildChapters(sources: Source[], options: BookOptions, ai: AiRes
         (b.type === "paragraph" || b.type === "message") && ai.corrections![b.key] ? { ...b, text: ai.corrections![b.key] } : b,
       );
     }
-    if (Object.keys(options.fixes ?? {}).length) {
-      c.blocks = c.blocks.map((b) => (b.type === "paragraph" || b.type === "message" ? { ...b, text: applyFixes(b.text, options.fixes) } : b));
+  }
+  const chapters = applyEdits(auto, edits);
+  const fixes = options.fixes ?? {};
+  if (Object.keys(fixes).length) {
+    for (const c of chapters) {
+      c.blocks = c.blocks.map((b) => {
+        if (b.type !== "paragraph" && b.type !== "message") return b;
+        const edit = b.edit?.runs ? { ...b.edit, runs: mapRunText(b.edit.runs, (t) => applyFixes(t, fixes)) } : b.edit;
+        return { ...b, text: applyFixes(b.text, fixes), edit };
+      });
     }
   }
   return chapters;
+}
+
+/**
+ * Lo que decidió el usuario: quita los bloques ocultos y las fotos quitadas,
+ * cambia el texto editado, corta capítulos donde lo pidió y coloca las
+ * páginas añadidas antes o después de su bloque.
+ */
+function applyEdits(chapters: Chapter[], edits: BookEdits): Chapter[] {
+  if (!Object.keys(edits.blocks).length && !edits.inserts.length) return chapters;
+  const before = new Map<string, Insert[]>();
+  const after = new Map<string, Insert[]>();
+  for (const ins of edits.inserts) {
+    const m = ins.side === "antes" ? before : after;
+    m.set(ins.at, [...(m.get(ins.at) ?? []), ins]);
+  }
+  const insertBlocks = (list: Insert[] | undefined): KeyedBlock[] => (list ?? []).map((insert) => ({ type: "insert", insert, key: `ins:${insert.id}` }));
+
+  const out: Chapter[] = [];
+  for (const c of chapters) {
+    let cur: Chapter = { ...c, blocks: [] };
+    out.push(cur);
+    for (const b of c.blocks) {
+      const e = edits.blocks[b.key];
+      cur.blocks.push(...insertBlocks(before.get(b.key)));
+      if (e?.chapter) {
+        const title = e.chapter.title.trim() || "Sin título";
+        if (!cur.blocks.length) {
+          // Primer bloque del capítulo: se renombra en vez de dejar uno vacío.
+          cur.title = title;
+          cur.subtitle = e.chapter.subtitle || undefined;
+        } else {
+          cur = { key: `${b.key}:cap`, title, subtitle: e.chapter.subtitle || undefined, blocks: [] };
+          out.push(cur);
+        }
+      }
+      if (!e?.hidden) cur.blocks.push(e ? withEdit(b, e) : b);
+      cur.blocks.push(...insertBlocks(after.get(b.key)));
+    }
+  }
+  return out;
+}
+
+function withEdit(b: KeyedBlock, e: BlockEdit): KeyedBlock {
+  if (b.type === "message") {
+    const hidden = new Set(e.photos?.hidden ?? []);
+    return { ...b, edit: e, text: e.runs ? runsToPlain(e.runs) : b.text, media: hidden.size ? b.media.filter((m) => !hidden.has(m)) : b.media };
+  }
+  if (b.type === "paragraph") return { ...b, edit: e, text: e.runs ? runsToPlain(e.runs) : b.text };
+  return { ...b, edit: e };
 }
 
 /** Fragmento corto de cada capítulo para pedir títulos a la IA. */

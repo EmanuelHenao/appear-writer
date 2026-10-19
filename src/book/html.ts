@@ -17,6 +17,10 @@ export interface BookDocInput {
   stock?: PhotoRef[];
   /** Solo para la vista previa: páginas a mostrar. */
   previewLimit?: number;
+  /** Solo para la vista previa: clave del bloque alrededor del cual se muestran las páginas. */
+  focusKey?: string;
+  /** URL de una foto subida (páginas añadidas), según se vea en pantalla o en Chromium. */
+  photoUrl?: (url: string) => string;
 }
 
 const ROMAN: [number, string][] = [
@@ -57,13 +61,108 @@ function metaLine(b: Extract<KeyedBlock, { type: "message" }>, o: BookOptions): 
   return parts.map(esc).join(" · ");
 }
 
-function messageImages(b: Extract<KeyedBlock, { type: "message" }>, input: BookDocInput): string {
-  if (!input.options.content.chatPhotos || !b.media.length) return "";
-  return `<div class="msg-photos">${b.media.map((m) => `<figure class="polaroid"><img src="${esc(input.mediaUrl(m))}" alt=""></figure>`).join("")}</div>`;
+type MsgBlock = Extract<KeyedBlock, { type: "message" }>;
+
+const keyAttr = (b: KeyedBlock) => ` data-key="${esc(b.key)}"`;
+const ALIGN = { izquierda: "left", centro: "center", derecha: "right" } as const;
+const alignAttr = (b: KeyedBlock) => (b.edit?.align ? ` style="text-align:${ALIGN[b.edit.align]}"` : "");
+
+function photoUrls(b: MsgBlock, input: BookDocInput): string[] {
+  return input.options.content.chatPhotos ? b.media.map((m) => input.mediaUrl(m)) : [];
+}
+
+function polaroids(urls: string[]): string {
+  return urls.length ? `<div class="msg-photos${urls.length > 2 ? " many" : ""}">${urls.map((u) => `<figure class="polaroid"><img src="${esc(u)}" alt=""></figure>`).join("")}</div>` : "";
+}
+
+const chunk = <T,>(list: T[], n: number): T[][] => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, i * n + n));
+
+/** Una página propia con las fotos del mensaje, antes de su texto. */
+const photoPage = (b: KeyedBlock, urls: string[]) =>
+  urls.length ? `<div class="ph-own" data-mode="own" data-page-class="photo-page"${keyAttr(b)}>${polaroids(urls)}</div>` : "";
+
+const fullPhoto = (b: KeyedBlock, url: string, over = "") =>
+  `<div class="pf" data-mode="own" data-page-class="photo-full nohead nofolio"${keyAttr(b)}><img src="${esc(url)}" alt="">${over}</div>`;
+
+function messageHtml(b: MsgBlock, input: BookDocInput): string {
+  const o = input.options;
+  const e = b.edit;
+  const meta = metaLine(b, o);
+  const metaHtml = meta ? `<p class="meta" data-meta-end>${meta}</p>` : "";
+  const k = keyAttr(b);
+  const text = (cls: string) => (b.text ? `<p class="${cls}" data-split${alignAttr(b)}>${esc(b.text)}</p>` : "");
+  const urls = photoUrls(b, input);
+  const ownText = () => (b.text ? `<div class="msg-own" data-mode="own" data-page-class="msg-page" data-long-class="msg msg-long"${k}>${text("msg-text")}${metaHtml}</div>` : "");
+  const cita = () =>
+    `<div class="cita" data-mode="own" data-page-class="cita-page" data-long-class="msg msg-long"${k}><span class="q" aria-hidden="true">“</span>${text("cita-text")}<span class="cita-rule"></span>${metaHtml}</div>`;
+
+  switch (e?.design) {
+    case "cita":
+      return photoPage(b, urls) + cita();
+    case "foto-completa": {
+      if (!urls.length) return cita();
+      if (e.photoText === "encima" && b.text) {
+        const over = `<div class="veil">${text("pf-text")}${metaHtml}</div>`;
+        return urls.map((u, i) => fullPhoto(b, u, i === 0 ? over : "")).join("");
+      }
+      return urls.map((u) => fullPhoto(b, u)).join("") + ownText();
+    }
+    case "foto-texto": {
+      if (!urls.length) return ownText();
+      return chunk(urls, 2)
+        .map(
+          (pair, i) =>
+            `<div class="photo-text" data-mode="own" data-page-class="photo-text-page"${k}><div class="pt-photos n${pair.length}">${pair
+              .map((u) => `<figure class="frame"><img src="${esc(u)}" alt=""></figure>`)
+              .join("")}</div>${i === 0 ? `${text("pt-text")}${metaHtml}` : ""}</div>`,
+        )
+        .join("");
+    }
+  }
+
+  const place = e?.photos?.place ?? "junto";
+  const before = place === "antes" || place === "ambas" ? photoPage(b, urls) : "";
+  const images = place === "antes" ? "" : polaroids(urls);
+  if (o.content.bubbles) {
+    const right = !!o.content.rightAuthor && b.author === o.content.rightAuthor;
+    const time = b.date && (o.content.showTime || o.content.showDate) ? esc(o.content.showTime ? b.date.slice(11, 16) : "") : "";
+    const who = o.content.showName && !right ? `<div class="b-author">${esc(b.author)}</div>` : "";
+    return `${before}<div class="bubble ${right ? "right" : "left"}"${k}>${who}${images}${text("b-text")}${time ? `<span class="b-meta" data-meta-end>${time}</span>` : ""}</div>`;
+  }
+  if (o.content.onePerPage) {
+    if (!b.text && !images) return before;
+    return `${before}<div class="msg-own" data-mode="own" data-page-class="msg-page" data-long-class="msg msg-long"${k}>${images}${text("msg-text")}${metaHtml}</div>`;
+  }
+  return `${before}<div class="msg"${k}>${images}${text("msg-text")}${metaHtml}</div>`;
+}
+
+function insertHtml(b: Extract<KeyedBlock, { type: "insert" }>, input: BookDocInput): string {
+  const ins = b.insert;
+  const k = keyAttr(b);
+  const url = ins.photo ? (input.photoUrl ? input.photoUrl(ins.photo.url) : ins.photo.url) : "";
+  switch (ins.kind) {
+    case "separador":
+      return `<div class="sep" data-mode="own" data-page-class="sep-page nohead nofolio"${k}>${ornament(input.options, "❦")}${ins.title ? `<div class="sep-title">${esc(ins.title)}</div>` : ""}${ins.caption ? `<div class="sep-sub">${esc(ins.caption)}</div>` : ""}</div>`;
+    case "blanco":
+      return `<div class="blank" data-mode="own" data-page-class="blank-page nohead nofolio"${k}></div>`;
+    case "imagen":
+      if (!url) return "";
+      if (ins.fit === "enmarcada")
+        return `<div class="ph-own" data-mode="own" data-page-class="photo-page"${k}><figure class="frame big"><img src="${esc(url)}" alt="">${ins.caption ? `<figcaption>${esc(ins.caption)}</figcaption>` : ""}</figure></div>`;
+      return fullPhoto(b, url);
+    case "libre": {
+      const text = (ins.runs ?? []).map((r) => r.t).join("");
+      const paras = text.split(/\n{2,}/).map((t) => t.trim()).filter(Boolean);
+      if (!paras.length && !ins.title) return "";
+      // La página libre empieza siempre en una página nueva.
+      const start = ` data-newpage="1" data-page-class="text"`;
+      const title = ins.title ? `<h3 class="libre-title"${k}${start}>${esc(ins.title)}</h3>` : "";
+      return title + paras.map((t, i) => `<p class="para libre" data-split${k}${i === 0 && !title ? start : ""}>${esc(t)}</p>`).join("");
+    }
+  }
 }
 
 function blockHtml(b: KeyedBlock, input: BookDocInput, first: boolean): string {
-  const o = input.options;
   switch (b.type) {
     case "heading":
       return `<h3 class="sub">${esc(b.text)}</h3>`;
@@ -71,23 +170,12 @@ function blockHtml(b: KeyedBlock, input: BookDocInput, first: boolean): string {
       return `<figure class="figure"><img src="${esc(input.mediaUrl(b.src))}" alt="">${b.caption ? `<figcaption>${esc(b.caption)}</figcaption>` : ""}</figure>`;
     case "paragraph": {
       const verse = b.text.includes("\n");
-      return `<p class="para${verse ? " verse" : ""}${first && !verse ? " first" : ""}" data-split>${esc(b.text)}</p>`;
+      return `<p class="para${verse ? " verse" : ""}${first && !verse ? " first" : ""}" data-split${keyAttr(b)}${alignAttr(b)}>${esc(b.text)}</p>`;
     }
-    case "message": {
-      const meta = metaLine(b, o);
-      const text = b.text ? `<p class="msg-text" data-split>${esc(b.text)}</p>` : "";
-      const metaHtml = meta ? `<p class="meta" data-meta-end>${meta}</p>` : "";
-      if (o.content.bubbles) {
-        const right = !!o.content.rightAuthor && b.author === o.content.rightAuthor;
-        const time = b.date && (o.content.showTime || o.content.showDate) ? esc(o.content.showTime ? b.date.slice(11, 16) : "") : "";
-        const who = o.content.showName && !right ? `<div class="b-author">${esc(b.author)}</div>` : "";
-        return `<div class="bubble ${right ? "right" : "left"}">${who}${messageImages(b, input)}${b.text ? `<p class="b-text" data-split>${esc(b.text)}</p>` : ""}${time ? `<span class="b-meta" data-meta-end>${time}</span>` : ""}</div>`;
-      }
-      if (o.content.onePerPage) {
-        return `<div class="msg-own" data-mode="own" data-page-class="msg-page" data-long-class="msg msg-long">${messageImages(b, input)}${text}${metaHtml}</div>`;
-      }
-      return `<div class="msg">${messageImages(b, input)}${text}${metaHtml}</div>`;
-    }
+    case "message":
+      return messageHtml(b, input);
+    case "insert":
+      return insertHtml(b, input);
   }
 }
 
@@ -163,7 +251,7 @@ export function buildBookHtml(input: BookDocInput): string {
 ${input.fontCss}
 @page { size: ${g.w}mm ${g.h}mm; margin: 0; }
 :root { --pw: ${g.w}mm; --ph: ${g.h}mm; --u: calc(${g.w}mm / 420); --cover-inset: calc(var(--u) * 28 + ${g.bleed}mm);
-  --paper: ${p.paper}; --ink: ${p.ink}; --muted: ${p.muted}; --accent: ${p.accent}; --deep: ${p.deep}; --soft: ${p.soft}; }
+  --paper: ${p.paper}; --ink: ${p.ink}; --muted: ${p.muted}; --accent: ${p.accent}; --deep: ${p.deep}; --on-deep: ${p.onDeep}; --soft: ${p.soft}; }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body { font-family: ${serif}; color: var(--ink); font-size: ${pt}pt; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -246,6 +334,41 @@ body { font-family: ${serif}; color: var(--ink); font-size: ${pt}pt; line-height
 .toc-t { flex: none; max-width: 78%; }
 .toc-dots { flex: 1; border-bottom: 0.25mm dotted var(--muted); transform: translateY(-1mm); }
 .pn { flex: none; font-variant-numeric: tabular-nums; color: var(--muted); }
+/* Diseños especiales de un mensaje y páginas añadidas */
+.page.cita-page .body, .page.photo-page .body, .page.photo-text-page .body, .page.sep-page .body { display: flex; flex-direction: column; justify-content: center; }
+.cita { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4mm; padding: 0 4mm; }
+.cita .q { font-size: 4.4em; line-height: 1; height: 0.5em; color: var(--accent); }
+.cita-text { margin: 0; font-size: 1.85em; line-height: 1.3; font-style: italic; white-space: pre-line; text-wrap: balance; }
+.cita-rule { width: 12mm; height: 0.25mm; background: var(--accent); }
+.page.photo-full .inner { padding: 0; }
+.page.photo-full .head, .page.photo-full .folio { display: none; }
+.pf { position: absolute; inset: 0; }
+.pf > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.veil { position: absolute; left: 0; right: 0; bottom: 0; padding: 34mm ${m.outer}mm ${m.bottom}mm ${m.inner}mm; background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--deep) 92%, transparent) 45%); color: var(--on-deep); }
+.pf-text { margin: 0; font-size: 1.35em; line-height: 1.32; white-space: pre-line; text-wrap: pretty; }
+.veil .meta { color: var(--on-deep); opacity: 0.85; }
+.ph-own { display: flex; flex-direction: column; align-items: center; gap: 4mm; }
+.ph-own .polaroid img { max-width: 100%; max-height: 120mm; }
+.ph-own .msg-photos.many .polaroid img { max-width: 52mm; max-height: 58mm; }
+.photo-text { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5mm; }
+.pt-photos { display: grid; gap: 3mm; width: 100%; }
+.pt-photos.n2 { grid-template-columns: 1fr 1fr; }
+.frame { margin: 0; background: #fff; padding: 2mm; box-shadow: 0 0.6mm 2mm rgba(60,45,20,0.18); }
+.frame img { display: block; width: 100%; max-height: 95mm; object-fit: cover; }
+.pt-photos.n2 .frame img { height: 72mm; }
+.frame.big { width: auto; max-width: 100%; }
+.frame.big img { width: auto; max-width: 100%; max-height: 135mm; margin: 0 auto; }
+.frame figcaption { font-style: italic; font-size: 0.85em; color: var(--muted); text-align: center; padding-top: 2mm; }
+.pt-text { margin: 0; font-size: 1.15em; line-height: 1.4; white-space: pre-line; text-wrap: pretty; }
+.sep { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5mm; }
+.sep .orn { font-size: 1.5em; }
+.sep-title { font-size: 2em; font-weight: 500; line-height: 1.1; text-wrap: balance; }
+.sep-sub { font-size: 0.7em; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); }
+.libre-title { font-size: 1.5em; font-weight: 500; text-align: center; margin: 8mm 0 6mm; }
+.para.libre + .para.libre { text-indent: 1.4em; }
+body.previewing [data-key] { cursor: pointer; }
+body.previewing [data-key]:hover { outline: 0.3mm dashed rgba(124, 104, 230, 0.55); outline-offset: 1.5mm; }
+body.previewing .picked { outline: 0.5mm solid #8f7cf0 !important; outline-offset: 1.5mm; box-shadow: 0 0 0 2.2mm rgba(182, 166, 255, 0.28); border-radius: 0.6mm; }
 .preview-note { grid-column: 1 / -1; text-align: center; color: #cfc9da; font-family: system-ui, sans-serif; font-size: 13px; }
 
 @media screen {
@@ -259,7 +382,7 @@ body { font-family: ${serif}; color: var(--ink); font-size: ${pt}pt; line-height
 
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(o.cover.title)}</title><style>${css}</style></head>
-<body data-title="${esc(o.cover.title)}" data-preview-limit="${input.previewLimit ?? 0}">
+<body data-title="${esc(o.cover.title)}" data-preview-limit="${input.previewLimit ?? 0}"${input.focusKey ? ` data-focus="${esc(input.focusKey)}"` : ""}>
 <template id="page-tpl"><section class="page"><div class="inner"><div class="head"><span class="h-left"></span><span class="h-right"></span></div><div class="body"></div><div class="folio"></div></div></section></template>
 <main id="book"></main>
 <div id="flow">${items.join("\n")}</div>

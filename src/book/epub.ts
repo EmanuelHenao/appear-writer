@@ -21,6 +21,17 @@ interface EpubInput {
   coverPng?: Buffer;
 }
 
+/** Las fotos del chat están en la carpeta del libro; las subidas, en /api/files/… (DATA_DIR). */
+function fileOf(bookId: string, f: string): string {
+  const m = f.match(/^\/api\/files\/(.+)$/);
+  if (m) {
+    const parts = m[1].split("/").map(decodeURIComponent);
+    if (parts.some((x) => x === ".." || !x)) throw new Error("Ruta no válida");
+    return dataPath(...parts);
+  }
+  return dataPath("books", bookId, "media", f);
+}
+
 const xhtml = (title: string, body: string, extraHead = "") => `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="es" lang="es">
@@ -104,6 +115,17 @@ h3 { font-size: 1.1em; margin: 1.2em 0 0.4em; }
 .msg.own { break-before: page; page-break-before: always; text-align: center; margin-top: 25%; }
 .msg.own .text { font-size: 1.3em; }
 .msg .text { margin: 0; white-space: pre-line; }
+.cita { break-before: page; page-break-before: always; margin: 25% 1.5em 0; text-align: center; font-style: italic; }
+.cita .text { font-size: 1.4em; margin: 0; white-space: pre-line; }
+.cita .meta { font-style: normal; margin-top: 0.8em; font-size: 0.7em; letter-spacing: 0.15em; text-transform: uppercase; color: ${p.muted}; }
+.photo-page { break-before: page; page-break-before: always; text-align: center; }
+.sep { break-before: page; page-break-before: always; break-after: page; page-break-after: always; text-align: center; margin-top: 35%; }
+.sep-title { font-size: 1.6em; margin: 0.4em 0; }
+.sep-sub { font-size: 0.7em; letter-spacing: 0.25em; text-transform: uppercase; color: ${p.muted}; }
+.libre { break-before: page; page-break-before: always; }
+.page-img { break-before: page; page-break-before: always; margin: 0; text-align: center; }
+.page-img img { max-width: 100%; max-height: 95vh; }
+.page-img figcaption { font-style: italic; font-size: 0.85em; color: ${p.muted}; }
 .msg .meta { margin: 0.3em 0 0; font-size: 0.7em; letter-spacing: 0.15em; text-transform: uppercase; color: ${p.muted}; }
 .bubble { max-width: 80%; margin: 0 0 0.7em; padding: 0.5em 0.8em; border-radius: 0.8em; background: #ffffff; border: 1px solid ${p.soft}; }
 .bubble.left { margin-right: 20%; }
@@ -149,11 +171,11 @@ nav ol { list-style: none; padding: 0; }
   const images = new Map<string, { out: string; data: Buffer; type: string } | null>();
   for (const c of input.chapters) {
     for (const b of c.blocks) {
-      const files = b.type === "image" ? [b.src] : b.type === "message" && o.content.chatPhotos ? b.media : [];
+      const files = b.type === "image" ? [b.src] : b.type === "message" && o.content.chatPhotos ? b.media : b.type === "insert" && b.insert.photo ? [b.insert.photo.url] : [];
       for (const f of files) {
         if (images.has(f)) continue;
         try {
-          const data = await readFile(dataPath("books", input.bookId, "media", f));
+          const data = await readFile(fileOf(input.bookId, f));
           const kind = sniffImage(data);
           images.set(f, kind ? { out: `img${images.size}.${kind.ext}`, data, type: kind.type } : null);
         } catch {
@@ -185,6 +207,17 @@ nav ol { list-style: none; padding: 0; }
       } else if (b.type === "image") {
         const src = image(b.src);
         if (src) parts.push(`<figure><img src="${src}" alt=""/></figure>`);
+      } else if (b.type === "insert") {
+        const ins = b.insert;
+        if (ins.kind === "separador") parts.push(`<div class="sep">${o.content.ornaments ? `<p class="orn">❦</p>` : ""}${ins.title ? `<p class="sep-title">${esc(ins.title)}</p>` : ""}${ins.caption ? `<p class="sep-sub">${esc(ins.caption)}</p>` : ""}</div>`);
+        else if (ins.kind === "libre") {
+          const text = (ins.runs ?? []).map((r) => r.t).join("");
+          const paras = text.split(/\n{2,}/).map((t) => t.trim()).filter(Boolean);
+          parts.push(`<div class="libre">${ins.title ? `<h3>${esc(ins.title)}</h3>` : ""}${paras.map((t) => `<p class="para">${esc(t)}</p>`).join("")}</div>`);
+        } else if (ins.kind === "imagen" && ins.photo) {
+          const src = image(ins.photo.url);
+          if (src) parts.push(`<figure class="page-img"><img src="${src}" alt=""/>${ins.caption ? `<figcaption>${esc(ins.caption)}</figcaption>` : ""}</figure>`);
+        }
       } else {
         const meta: string[] = [];
         if (o.content.showName) meta.push(esc(b.author));
@@ -192,16 +225,32 @@ nav ol { list-style: none; padding: 0; }
         else if (b.date && o.content.showTime) meta.push(b.date.slice(11, 16));
         const srcs = o.content.chatPhotos ? b.media.map(image).filter((x): x is string => !!x) : [];
         const photos = srcs.length ? `<div class="photos">${srcs.map((src) => `<img src="${src}" alt=""/>`).join("")}</div>` : "";
+        const design = b.edit?.design ?? "normal";
+        const place = b.edit?.photos?.place ?? "junto";
+        const metaP = meta.length ? `<p class="meta">${meta.join(" · ")}</p>` : "";
+        const textP = b.text ? `<p class="text">${esc(b.text)}</p>` : "";
+        // Los diseños especiales se simplifican: el EPUB refluye y no tiene páginas fijas.
+        if (design === "cita") {
+          if (photos) parts.push(`<div class="photo-page">${photos}</div>`);
+          parts.push(`<blockquote class="cita">${textP}${metaP}</blockquote>`);
+          continue;
+        }
+        if (design !== "normal") {
+          parts.push(`<div class="msg own">${photos}${textP}${metaP}</div>`);
+          continue;
+        }
+        if (place !== "junto" && photos) parts.push(`<div class="photo-page">${photos}</div>`);
+        const inline = place === "antes" ? "" : photos;
         if (o.content.bubbles) {
           const right = !!o.content.rightAuthor && b.author === o.content.rightAuthor;
           const time = b.date && o.content.showTime ? b.date.slice(11, 16) : "";
           parts.push(
-            `<div class="bubble ${right ? "right" : "left"}">${o.content.showName && !right ? `<p class="b-author">${esc(b.author)}</p>` : ""}${photos}${b.text ? `<p class="text">${esc(b.text)}</p>` : ""}${time ? `<p class="b-meta">${time}</p>` : ""}</div>`,
+            `<div class="bubble ${right ? "right" : "left"}">${o.content.showName && !right ? `<p class="b-author">${esc(b.author)}</p>` : ""}${inline}${b.text ? `<p class="text">${esc(b.text)}</p>` : ""}${time ? `<p class="b-meta">${time}</p>` : ""}</div>`,
           );
           continue;
         }
         parts.push(
-          `<div class="msg${o.content.onePerPage ? " own" : ""}">${photos}${b.text ? `<p class="text">${esc(b.text)}</p>` : ""}${meta.length ? `<p class="meta">${meta.join(" · ")}</p>` : ""}</div>`,
+          `<div class="msg${o.content.onePerPage ? " own" : ""}">${inline}${b.text ? `<p class="text">${esc(b.text)}</p>` : ""}${meta.length ? `<p class="meta">${meta.join(" · ")}</p>` : ""}</div>`,
         );
       }
     }

@@ -2,6 +2,7 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import nspell from "nspell";
+import { isLaugh } from "@/book/suggest";
 import { nodeModules } from "./render/fontcss";
 
 // Revisión ortográfica sin IA ni conexión: diccionario Hunspell de español
@@ -54,7 +55,6 @@ const SLANG: Record<string, string[]> = {
 };
 
 const VOWEL_ACCENT: Record<string, string> = { a: "á", e: "é", i: "í", o: "ó", u: "ú" };
-const isLaugh = (w: string) => /^(j[aeiou]){2,}j?$|^(ha){2,}h?$|^(js){2,}j?$|^(xd)+$/i.test(w);
 
 /** Variantes con una tilde o con ñ que el diccionario acepta. */
 function accentFixes(sp: Speller, w: string): string[] {

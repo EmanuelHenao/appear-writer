@@ -50,6 +50,7 @@ function project(sources: Source[]): BookProject {
     optionsTouched: false,
     ai: {},
     stock: { query: "", photos: [] },
+    edits: { blocks: {}, inserts: [] },
   };
 }
 
@@ -139,6 +140,72 @@ describe("render del libro", () => {
     }
     const epub = await exportEpub(book);
     const file = path.join(DATA, "burbujas.epub");
+    await writeFile(file, epub);
+    if (process.env.EPUBCHECK_JAR) {
+      const out = execFileSync("java", ["-jar", process.env.EPUBCHECK_JAR, file], { encoding: "utf8" });
+      expect(out).toMatch(/0 errores fatales \/ 0 errores|0 fatals \/ 0 errors/);
+    }
+  });
+
+  it("v6: ocultos, diseños especiales y páginas añadidas en PDF, vista previa y EPUB", async () => {
+    const withPhotos = await importFile("testbook", { name: "Chat de WhatsApp con Ana.zip", data: await chatZip() });
+    const book = project([withPhotos, chatSource()]);
+    const keys = withPhotos.blocks.map((b, i) => ({ b, key: `${withPhotos.id}:${i}` }));
+    const photoMsgs = keys.filter((x) => x.b.type === "message" && x.b.media.length);
+    const textMsgs = keys.filter((x) => x.b.type === "message" && x.b.text && !x.b.media.length);
+    expect(photoMsgs.length).toBeGreaterThanOrEqual(2);
+    const [p1, p2] = photoMsgs;
+    const media = p1.b.type === "message" ? p1.b.media[0] : "";
+    book.edits = {
+      blocks: {
+        [textMsgs[0].key]: { design: "cita", align: "centro" },
+        [textMsgs[1].key]: { hidden: true },
+        [p1.key]: { design: "foto-completa", photoText: "encima" },
+        [p2.key]: { design: "foto-texto" },
+        "chat1:2": { chapter: { title: "Capítulo a mano" } },
+        "chat1:3": { photos: { hidden: [], place: "antes" } },
+      },
+      inserts: [
+        { id: "sep", at: textMsgs[0].key, side: "antes", kind: "separador", title: "El viaje" },
+        { id: "libre", at: textMsgs[0].key, side: "despues", kind: "libre", title: "Una nota", runs: [{ t: "Primer párrafo.\n\nSegundo párrafo." }] },
+        { id: "img", at: "chat1:4", side: "despues", kind: "imagen", fit: "enmarcada", caption: "Pie de foto", photo: { url: `/api/files/books/testbook/media/${encodeURIComponent(media)}` } },
+        { id: "blank", at: "chat1:5", side: "antes", kind: "blanco" },
+      ],
+    };
+    const html = await bookHtml(book, "print");
+    const hiddenText = textMsgs[1].b.type === "message" ? textMsgs[1].b.text : "";
+    expect(html).not.toContain(`data-key="${textMsgs[1].key}"`);
+    expect(html).toContain(`class="cita"`);
+    expect(html).toContain(`class="veil"`);
+    expect(html).toContain(`class="pt-photos n`);
+    expect(html).toContain(`style="text-align:center"`);
+    expect(html).toContain("Capítulo a mano");
+    expect(html).toContain(`class="sep-title">El viaje`);
+    expect(html).toContain("Segundo párrafo.");
+    expect(html).toContain(`data-page-class="blank-page nohead nofolio"`);
+    expect(html).toContain("http://appear.local/data/books/testbook/media/");
+    expect(hiddenText.length).toBeGreaterThan(0);
+
+    const pdf = await exportPdf(book);
+    expect(pdfPages(pdf)).toBe(book.lastPages);
+    if (OUT) {
+      await writeFile(path.join(OUT, "libro-v6.pdf"), pdf);
+      const pngs = await exportPngs(book);
+      for (const [i, png] of pngs.slice(0, 14).entries()) await writeFile(path.join(OUT, `v6-${i + 1}.png`), png);
+    }
+
+    // Vista previa centrada en un mensaje: ventana de páginas alrededor y foco marcado.
+    const preview = await bookHtml(book, "preview", 6, false, "chat1:9");
+    expect(preview).toContain('data-focus="chat1:9"');
+
+    const epub = await exportEpub(book);
+    const zip = await JSZip.loadAsync(epub);
+    const text = (await Promise.all(Object.keys(zip.files).filter((n) => n.endsWith(".xhtml")).map((n) => zip.file(n)!.async("string")))).join("\n");
+    expect(text).toContain('class="cita"');
+    expect(text).toContain("El viaje");
+    expect(text).toContain("Capítulo a mano");
+    expect(text).toContain("Pie de foto");
+    const file = path.join(DATA, "v6.epub");
     await writeFile(file, epub);
     if (process.env.EPUBCHECK_JAR) {
       const out = execFileSync("java", ["-jar", process.env.EPUBCHECK_JAR, file], { encoding: "utf8" });

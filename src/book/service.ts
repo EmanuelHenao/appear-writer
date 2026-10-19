@@ -11,8 +11,8 @@ import { buildChapters } from "./structure";
 
 const FONTS_FOR = (font: string): FontId[] => [font as FontId, "fraunces", "jost"];
 
-export async function bookHtml(book: BookProject, target: "preview" | "print", previewLimit = 0, coverOnly = false): Promise<string> {
-  const chapters = coverOnly ? [] : buildChapters(book.sources, book.options, book.ai);
+export async function bookHtml(book: BookProject, target: "preview" | "print", previewLimit = 0, coverOnly = false, focusKey?: string): Promise<string> {
+  const chapters = coverOnly ? [] : buildChapters(book.sources, book.options, book.ai, book.edits);
   const base = target === "print" ? VIRTUAL_ORIGIN : "/api/";
   const fontCss = await fontFaceCss(FONTS_FOR(book.options.font), base);
   const mediaUrl =
@@ -27,6 +27,8 @@ export async function bookHtml(book: BookProject, target: "preview" | "print", p
     // Las fotos subidas viven en DATA_DIR: Chromium las lee del origen virtual.
     stock: book.options.content.stockPhotos ? book.stock.photos.map((p) => (target === "print" ? { ...p, url: toVirtual(p.url)! } : p)) : [],
     previewLimit,
+    focusKey,
+    photoUrl: (url) => (target === "print" ? (toVirtual(url) ?? url) : url),
   });
 }
 
@@ -54,5 +56,5 @@ export async function exportPngs(book: BookProject) {
 export async function exportEpub(book: BookProject) {
   const cover = await renderCover(book);
   await saveBook(book);
-  return buildEpub({ bookId: book.id, chapters: buildChapters(book.sources, book.options, book.ai), options: book.options, coverPng: cover });
+  return buildEpub({ bookId: book.id, chapters: buildChapters(book.sources, book.options, book.ai, book.edits), options: book.options, coverPng: cover });
 }

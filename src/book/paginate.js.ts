@@ -75,6 +75,14 @@ export const PAGINATE_JS = String.raw`
     }
   }
 
+  function byKey(key) {
+    return Array.prototype.filter.call(document.querySelectorAll("[data-key]"), function (el) { return el.dataset.key === key; });
+  }
+  function pageOf(el) {
+    var p = el && el.closest(".page");
+    return p ? Number(p.dataset.n) || 0 : 0;
+  }
+
   function run() {
     var items = Array.prototype.slice.call(flow.children);
     var chapterOf = [];
@@ -111,6 +119,7 @@ export const PAGINATE_JS = String.raw`
     var chapter = "";
     pages.forEach(function (page, i) {
       var n = i + 1;
+      page.dataset.n = String(n);
       page.classList.add(i % 2 === 0 ? "recto" : "verso");
       var marker = page.querySelector("[data-chapter]");
       if (marker) chapter = marker.dataset.chapter;
@@ -128,11 +137,27 @@ export const PAGINATE_JS = String.raw`
       if (pn) pn.textContent = chapterPages[li.dataset.toc] || "";
     });
     var total = pages.length;
+    // Con foco, la ventana de páginas se centra en el bloque elegido; empieza
+    // en una página par (izquierda) para no romper los pliegos.
+    var offset = 0;
+    var focusKey = document.body.dataset.focus || "";
+    if (limit && total > limit && focusKey) {
+      var hit = byKey(focusKey)[0];
+      var fp = hit ? hit.closest(".page") : null;
+      var fi = fp ? pages.indexOf(fp) : -1;
+      if (fi >= 0) {
+        offset = Math.max(0, Math.min(total - limit, fi - Math.floor(limit / 2)));
+        if (offset > 0 && offset % 2 === 0) offset -= 1;
+      }
+    }
     if (limit && total > limit) {
-      pages.slice(limit).forEach(function (p) { p.remove(); });
+      pages.slice(0, offset).forEach(function (p) { p.remove(); });
+      pages.slice(offset + limit).forEach(function (p) { p.remove(); });
       var note = document.createElement("p");
       note.className = "preview-note";
-      note.textContent = "Vista previa de las primeras " + limit + " páginas de " + total + ". El archivo final incluye todas.";
+      note.textContent = offset
+        ? "Vista previa de las páginas " + (offset + 1) + " a " + Math.min(total, offset + limit) + " de " + total + ". El archivo final incluye todas."
+        : "Vista previa de las primeras " + limit + " páginas de " + total + ". El archivo final incluye todas.";
       book.appendChild(note);
     }
     // Visor de la vista previa: una página o doble página (por defecto),
@@ -143,8 +168,15 @@ export const PAGINATE_JS = String.raw`
       var shown = Array.prototype.slice.call(book.querySelectorAll(".page"));
       var current = 1;
       var z = 1;
+      // En doble página, el índice (desde 1) de la página izquierda del pliego.
+      var spreadStart = function (n) {
+        if (view.cols !== 2) return n;
+        if (offset === 0) return n > 1 && n % 2 === 1 ? n - 1 : n;
+        return n % 2 === 0 ? n - 1 : n;
+      };
+      var inSpread = function (n) { return view.cols === 2 && !(offset === 0 && current === 1) && n === current + 1; };
       var report = function () {
-        try { parent.postMessage({ type: "book-view", page: current, shown: shown.length, cols: view.cols, zoom: z }, "*"); } catch (e) {}
+        try { parent.postMessage({ type: "book-view", page: current, shown: shown.length, cols: view.cols, zoom: z, offset: offset, total: total }, "*"); } catch (e) {}
       };
       // Tira de miniaturas al pie: un clic lleva a esa página.
       var STRIP = 78;
@@ -156,20 +188,20 @@ export const PAGINATE_JS = String.raw`
         var h = STRIP - 22, s = h / p.offsetHeight, w = Math.round(p.offsetWidth * s);
         var b = document.createElement("button");
         b.type = "button";
-        b.title = "Página " + (i + 1);
-        b.setAttribute("aria-label", "Ir a la página " + (i + 1));
-        b.style.cssText = "flex:none;position:relative;overflow:hidden;padding:0;border:0;border-radius:2px;cursor:pointer;background:none;width:" + w + "px;height:" + h + "px;" + (i > 0 && i % 2 === 1 ? "margin-left:6px;" : "");
+        b.title = "Página " + (p.dataset.n || i + 1);
+        b.setAttribute("aria-label", "Ir a la página " + (p.dataset.n || i + 1));
+        b.style.cssText = "flex:none;position:relative;overflow:hidden;padding:0;border:0;border-radius:2px;cursor:pointer;background:none;width:" + w + "px;height:" + h + "px;" + (i > 0 && (i + offset) % 2 === 1 ? "margin-left:6px;" : "");
         var c = p.cloneNode(true);
         c.style.cssText = "position:absolute;left:0;top:0;transform:scale(" + s + ");transform-origin:0 0;box-shadow:none;pointer-events:none;grid-column:auto";
         b.appendChild(c);
-        b.addEventListener("click", function () { current = i + 1; if (view.cols === 2 && current > 1 && current % 2 === 1) current -= 1; goTo(i + 1); report(); mark(); });
+        b.addEventListener("click", function () { current = spreadStart(i + 1); goTo(i + 1); report(); mark(); });
         strip.appendChild(b);
         return b;
       });
       var mark = function () {
         thumbs.forEach(function (b, i) {
           var n = i + 1;
-          var on = n === current || (view.cols === 2 && current > 1 && n === current + 1);
+          var on = n === current || inSpread(n);
           b.style.outline = on ? "2px solid #b6a6ff" : "none";
           b.style.outlineOffset = "2px";
           if (on && n === current) b.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -187,7 +219,7 @@ export const PAGINATE_JS = String.raw`
         var pw = first.offsetWidth, ph = first.offsetHeight;
         var cols = view.cols;
         book.style.gridTemplateColumns = "repeat(" + cols + ", var(--pw))";
-        first.style.gridColumn = cols === 2 ? "2" : "auto";
+        first.style.gridColumn = cols === 2 && offset === 0 ? "2" : "auto";
         var fitZ = Math.min((window.innerWidth - 32) / (pw * cols), (window.innerHeight - 32 - STRIP) / ph);
         z = view.zoom || Math.min(fitZ, 2);
         book.style.zoom = String(z);
@@ -203,8 +235,7 @@ export const PAGINATE_JS = String.raw`
         for (var i = 0; i < shown.length; i++) {
           var r = shown[i].getBoundingClientRect();
           if (r.bottom > mid) {
-            var n = i + 1;
-            if (view.cols === 2 && n > 1 && n % 2 === 1) n -= 1;
+            var n = spreadStart(i + 1);
             if (n !== current) { current = n; report(); }
             return;
           }
@@ -218,8 +249,30 @@ export const PAGINATE_JS = String.raw`
         if ("zoom" in d) view.zoom = d.zoom || 0;
         if (d.cols || "zoom" in d) { fit(); goTo(keep); }
         if (d.goto) { current = d.goto; goTo(d.goto); report(); }
+        if ("focus" in d) focus(d.focus, true);
       });
+      // Elegir un bloque con un clic: la página padre abre su ficha.
+      document.body.classList.add("previewing");
+      book.addEventListener("click", function (e) {
+        var el = e.target.closest && e.target.closest("[data-key]");
+        if (!el) return;
+        e.preventDefault();
+        focus(el.dataset.key, false);
+        try { parent.postMessage({ type: "book-pick", key: el.dataset.key, page: pageOf(el) }, "*"); } catch (err) {}
+      });
+      var focus = function (key, scroll) {
+        Array.prototype.forEach.call(document.querySelectorAll(".picked"), function (el) { el.classList.remove("picked"); });
+        if (!key) return;
+        var els = byKey(key);
+        els.forEach(function (el) { el.classList.add("picked"); });
+        if (scroll && els[0]) {
+          var idx = shown.indexOf(els[0].closest(".page"));
+          if (idx >= 0) { current = spreadStart(idx + 1); goTo(idx + 1); report(); }
+        }
+        try { parent.postMessage({ type: "book-focus", key: key, found: els.length > 0, page: pageOf(els[0]) }, "*"); } catch (err) {}
+      };
       fit();
+      if (focusKey) focus(focusKey, true);
       window.addEventListener("resize", fit);
       window.addEventListener("scroll", onScroll, { passive: true });
     }
