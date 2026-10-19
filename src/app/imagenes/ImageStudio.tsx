@@ -306,7 +306,7 @@ export function ImageStudio() {
         eyebrow="Paso 2 · Opciones"
         title="Revisa y cambia lo que quieras"
         aside={
-          <span className="rounded-full border border-suggest-line px-2.5 py-1 text-xs text-suggest">
+          <span className="whitespace-nowrap rounded-full border border-suggest-line px-2.5 py-1 text-xs text-suggest">
             ● sugerido
           </span>
         }

@@ -42,6 +42,10 @@ export interface VirtualDoc {
   width: number;
   height: number;
   scale: number;
+  media?: "screen" | "print";
+  /** Selector que indica que el documento terminó de armarse. */
+  readySelector?: string;
+  timeoutMs?: number;
 }
 
 /** Abre un documento en una pestaña nueva y devuelve la página lista. */
@@ -53,8 +57,11 @@ export async function openDoc(doc: VirtualDoc): Promise<{ page: Page; context: B
   });
   await context.route(`${VIRTUAL_ORIGIN}**`, (route) => serveVirtual(route, doc.html));
   const page = await context.newPage();
-  await page.goto(`${VIRTUAL_ORIGIN}doc`, { waitUntil: "load", timeout: 60_000 });
+  if (doc.media) await page.emulateMedia({ media: doc.media });
+  const timeout = doc.timeoutMs ?? 120_000;
+  await page.goto(`${VIRTUAL_ORIGIN}doc`, { waitUntil: "load", timeout });
   await page.evaluate(() => document.fonts.ready.then(() => true));
+  if (doc.readySelector) await page.waitForSelector(doc.readySelector, { state: "attached", timeout });
   return { page, context };
 }
 
