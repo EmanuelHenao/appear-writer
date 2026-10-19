@@ -420,9 +420,43 @@ export function BookStudio() {
               <div className="grid grid-cols-2 gap-2.5">
                 {hasChats ? (
                   <>
-                    <Check id="c-one" checked={o.content.onePerPage} onChange={(v) => upContent({ onePerPage: v })} suggested={S(true, sug?.content.onePerPage)}>
-                      Un mensaje por página
-                    </Check>
+                    <fieldset className="col-span-2 flex flex-col gap-2">
+                      <legend className="mb-1 text-sm text-muted">Cómo se ven los mensajes</legend>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(
+                          [
+                            ["pagina", "Uno por página", { onePerPage: true, bubbles: false }],
+                            ["burbujas", "Burbujas de chat", { onePerPage: false, bubbles: true }],
+                            ["seguidos", "Seguidos", { onePerPage: false, bubbles: false }],
+                          ] as const
+                        ).map(([id, label, value]) => {
+                          const current = o.content.bubbles ? "burbujas" : o.content.onePerPage ? "pagina" : "seguidos";
+                          const sugg = sug ? (sug.content.bubbles ? "burbujas" : sug.content.onePerPage ? "pagina" : "seguidos") : "";
+                          return (
+                            <Choice key={id} name="msgstyle" value={id} checked={current === id} suggested={sugg === id} onSelect={() => upContent(value)}>
+                              <span className="text-sm">{label}</span>
+                            </Choice>
+                          );
+                        })}
+                      </div>
+                      {o.content.bubbles ? (
+                        <label className="flex items-center gap-2 text-sm">
+                          <span className="text-muted">A la derecha (tus mensajes):</span>
+                          <select
+                            value={o.content.rightAuthor}
+                            onChange={(e) => upContent({ rightAuthor: e.target.value })}
+                            className="h-9 rounded-lg border border-line bg-ink px-2"
+                          >
+                            <option value="">Nadie</option>
+                            {Array.from(new Set(book.sources.flatMap((s) => s.meta.participants ?? []))).map((p) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+                    </fieldset>
                     <Check id="c-month" checked={o.content.chaptersByMonth} onChange={(v) => upContent({ chaptersByMonth: v })} suggested={S(true, sug?.content.chaptersByMonth)}>
                       Un capítulo por mes
                     </Check>

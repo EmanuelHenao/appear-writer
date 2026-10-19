@@ -121,6 +121,31 @@ describe("render del libro", () => {
     }
   });
 
+  it("v2: burbujas de chat con separadores por día, PDF y EPUB válidos", async () => {
+    const withPhotos = await importFile("testbook", { name: "Chat de WhatsApp con Ana.zip", data: await chatZip() });
+    const book = project([withPhotos]);
+    book.options.content = { ...book.options.content, bubbles: true, onePerPage: false, rightAuthor: "Emanuel", showTime: true };
+    const html = await bookHtml(book, "print");
+    expect(html).toContain('class="bubble left"');
+    expect(html).toContain('class="bubble right"');
+    expect(html).toContain("14 de marzo de 2024");
+    const pdf = await exportPdf(book);
+    // portada + portadilla + índice + capítulos con burbujas: mucho menos que un mensaje por página
+    expect(book.lastPages).toBeLessThan(10);
+    if (OUT) {
+      await writeFile(path.join(OUT, "libro-burbujas.pdf"), pdf);
+      const pngs = await exportPngs(book);
+      for (const [i, png] of pngs.entries()) await writeFile(path.join(OUT, `burbujas-${i + 1}.png`), png);
+    }
+    const epub = await exportEpub(book);
+    const file = path.join(DATA, "burbujas.epub");
+    await writeFile(file, epub);
+    if (process.env.EPUBCHECK_JAR) {
+      const out = execFileSync("java", ["-jar", process.env.EPUBCHECK_JAR, file], { encoding: "utf8" });
+      expect(out).toMatch(/0 errores fatales \/ 0 errores|0 fatals \/ 0 errors/);
+    }
+  });
+
   it("la vista previa corta en el límite de páginas", async () => {
     const html = await bookHtml(project([chatSource()]), "preview", 6);
     expect(html).toContain('data-preview-limit="6"');

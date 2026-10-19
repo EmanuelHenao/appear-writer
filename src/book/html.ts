@@ -3,7 +3,7 @@ import type { PhotoRef } from "@/design/spec";
 import { coverHtml, esc } from "./covers";
 import { BLEED_MM, bookPalette, PAGE_SIZES, type BookOptions } from "./options";
 import { PAGINATE_JS } from "./paginate.js";
-import { formatDate, type Chapter, type KeyedBlock } from "./structure";
+import { formatDate, formatLongDate, type Chapter, type KeyedBlock } from "./structure";
 
 // Documento HTML del libro: una sola fuente para la vista previa, el PDF y
 // los PNG por página. El paginador arma las páginas dentro del navegador.
@@ -77,6 +77,12 @@ function blockHtml(b: KeyedBlock, input: BookDocInput, first: boolean): string {
       const meta = metaLine(b, o);
       const text = b.text ? `<p class="msg-text" data-split>${esc(b.text)}</p>` : "";
       const metaHtml = meta ? `<p class="meta" data-meta-end>${meta}</p>` : "";
+      if (o.content.bubbles) {
+        const right = !!o.content.rightAuthor && b.author === o.content.rightAuthor;
+        const time = b.date && (o.content.showTime || o.content.showDate) ? esc(o.content.showTime ? b.date.slice(11, 16) : "") : "";
+        const who = o.content.showName && !right ? `<div class="b-author">${esc(b.author)}</div>` : "";
+        return `<div class="bubble ${right ? "right" : "left"}">${who}${messageImages(b, input)}${b.text ? `<p class="b-text" data-split>${esc(b.text)}</p>` : ""}${time ? `<span class="b-meta" data-meta-end>${time}</span>` : ""}</div>`;
+      }
       if (o.content.onePerPage) {
         return `<div class="msg-own" data-mode="own" data-page-class="msg-page" data-long-class="msg msg-long">${messageImages(b, input)}${text}${metaHtml}</div>`;
       }
@@ -136,10 +142,17 @@ export function buildBookHtml(input: BookDocInput): string {
 
   chapters.forEach((c, i) => {
     const isChat = c.blocks.some((b) => b.type === "message");
-    const own = (isChat && o.content.onePerPage) || (o.content.stockPhotos && !!input.stock?.length);
+    const own = (isChat && o.content.onePerPage && !o.content.bubbles) || (o.content.stockPhotos && !!input.stock?.length);
     items.push(chapterOpener(c, i, chapters.length, input, own));
     let first = !own;
+    let lastDay = "";
     for (const b of c.blocks) {
+      // En modo burbujas, un separador cada vez que cambia el día.
+      if (o.content.bubbles && b.type === "message" && b.date && o.content.showDate) {
+        const day = b.date.slice(0, 10);
+        if (day !== lastDay) items.push(`<div class="day-sep"><span>${esc(formatLongDate(day))}</span></div>`);
+        lastDay = day;
+      }
       items.push(blockHtml(b, input, first));
       if (b.type === "paragraph") first = false;
     }
@@ -216,6 +229,17 @@ body { font-family: ${serif}; color: var(--ink); font-size: ${pt}pt; line-height
 .msg .polaroid img { max-height: 50mm; }
 .msg-long .msg-text { font-size: 1.15em; }
 
+.bubble { position: relative; width: fit-content; max-width: 78%; margin: 0 0 2.2mm; padding: 2mm 3mm 1.6mm; border-radius: 3.2mm; background: #FFFFFF; box-shadow: 0 0.3mm 0.6mm rgba(0,0,0,0.08); clear: both; font-size: 0.92em; line-height: 1.38; }
+.bubble.left { margin-right: auto; border-top-left-radius: 0.8mm; }
+.bubble.right { margin-left: auto; background: color-mix(in srgb, var(--accent) 30%, #FFFFFF); border-top-right-radius: 0.8mm; }
+.bubble.cont { border-top-left-radius: 3.2mm; border-top-right-radius: 3.2mm; }
+.b-author { font-size: 0.7em; font-weight: 600; letter-spacing: 0.06em; color: var(--accent); margin-bottom: 0.5mm; }
+.b-text { margin: 0; white-space: pre-line; }
+.b-meta { display: block; text-align: right; font-size: 0.62em; color: var(--muted); margin-top: 0.4mm; }
+.bubble .polaroid { transform: none; padding: 0; box-shadow: none; background: transparent; }
+.bubble .polaroid img { max-width: 100%; max-height: 60mm; border-radius: 2mm; }
+.day-sep { text-align: center; margin: 3mm 0 3mm; }
+.day-sep span { display: inline-block; font-size: 0.62em; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); background: var(--soft); border-radius: 99px; padding: 0.8mm 3mm; }
 .toc-title { font-size: 1.6em; font-weight: 500; text-align: center; margin: 10mm 0 8mm; }
 .toc-entry { display: flex; align-items: baseline; gap: 2.5mm; margin: 0 0 2.2mm; }
 .toc-n { width: 9mm; color: var(--muted); font-size: 0.8em; flex: none; }

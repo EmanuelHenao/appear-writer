@@ -30,6 +30,12 @@ export function monthTitle(ym: string): string {
   return `${name.charAt(0).toUpperCase()}${name.slice(1)} de ${y}`;
 }
 
+/** «2024-03-14» → «14 de marzo de 2024». */
+export function formatLongDate(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return `${d} de ${MONTHS[m - 1] ?? ""} de ${y}`;
+}
+
 export function formatDate(iso: string, withTime: boolean): string {
   const [d, t] = iso.split("T");
   const [y, m, day] = d.split("-").map(Number);

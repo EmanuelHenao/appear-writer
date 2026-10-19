@@ -105,6 +105,12 @@ h3 { font-size: 1.1em; margin: 1.2em 0 0.4em; }
 .msg.own .text { font-size: 1.3em; }
 .msg .text { margin: 0; white-space: pre-line; }
 .msg .meta { margin: 0.3em 0 0; font-size: 0.7em; letter-spacing: 0.15em; text-transform: uppercase; color: ${p.muted}; }
+.bubble { max-width: 80%; margin: 0 0 0.7em; padding: 0.5em 0.8em; border-radius: 0.8em; background: #ffffff; border: 1px solid ${p.soft}; }
+.bubble.left { margin-right: 20%; }
+.bubble.right { margin-left: 20%; background: ${p.soft}; }
+.bubble .text { margin: 0; white-space: pre-line; }
+.b-author { margin: 0; font-size: 0.75em; font-weight: bold; color: ${p.accent}; }
+.b-meta { margin: 0.2em 0 0; text-align: right; font-size: 0.65em; color: ${p.muted}; }
 .photos { text-align: center; margin: 0 0 0.6em; }
 .photos img { max-width: 80%; max-height: 18em; }
 figure { margin: 1em 0; text-align: center; }
@@ -186,6 +192,14 @@ nav ol { list-style: none; padding: 0; }
         else if (b.date && o.content.showTime) meta.push(b.date.slice(11, 16));
         const srcs = o.content.chatPhotos ? b.media.map(image).filter((x): x is string => !!x) : [];
         const photos = srcs.length ? `<div class="photos">${srcs.map((src) => `<img src="${src}" alt=""/>`).join("")}</div>` : "";
+        if (o.content.bubbles) {
+          const right = !!o.content.rightAuthor && b.author === o.content.rightAuthor;
+          const time = b.date && o.content.showTime ? b.date.slice(11, 16) : "";
+          parts.push(
+            `<div class="bubble ${right ? "right" : "left"}">${o.content.showName && !right ? `<p class="b-author">${esc(b.author)}</p>` : ""}${photos}${b.text ? `<p class="text">${esc(b.text)}</p>` : ""}${time ? `<p class="b-meta">${time}</p>` : ""}</div>`,
+          );
+          continue;
+        }
         parts.push(
           `<div class="msg${o.content.onePerPage ? " own" : ""}">${photos}${b.text ? `<p class="text">${esc(b.text)}</p>` : ""}${meta.length ? `<p class="meta">${meta.join(" · ")}</p>` : ""}</div>`,
         );

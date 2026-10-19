@@ -42,7 +42,9 @@ export async function getBook(id: string): Promise<BookProject | null> {
   const b = await readJson<BookProject | null>(file(id), null);
   if (!b) return null;
   const parsed = BookOptionsSchema.safeParse(b.options);
-  if (!parsed.success) b.options = { ...suggestedBookOptions(b.sources), cover: b.options?.cover ?? suggestedBookOptions(b.sources).cover };
+  // Los campos nuevos de versiones posteriores toman su valor por defecto.
+  if (parsed.success) b.options = parsed.data;
+  else b.options = { ...suggestedBookOptions(b.sources), cover: b.options?.cover ?? suggestedBookOptions(b.sources).cover };
   return b;
 }
 

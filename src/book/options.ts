@@ -18,6 +18,10 @@ export const BookOptionsSchema = z.object({
   }),
   content: z.object({
     onePerPage: z.boolean(),
+    /** v2: mensajes como burbujas de chat (tiene prioridad sobre onePerPage). */
+    bubbles: z.boolean().default(false),
+    /** Participante cuyas burbujas van a la derecha («tus mensajes»). */
+    rightAuthor: z.string().default(""),
     showName: z.boolean(),
     showDate: z.boolean(),
     showTime: z.boolean(),
@@ -100,6 +104,8 @@ export function suggestedBookOptions(sources: Source[]): BookOptions {
     cover: { template: onlyChats ? "formas" : "tela", title, subtitle, author: "" },
     content: {
       onePerPage: onlyChats,
+      bubbles: false,
+      rightAuthor: chats[0]?.meta.participants?.[1] ?? "",
       showName: true,
       showDate: true,
       showTime: false,
