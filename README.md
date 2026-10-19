@@ -17,7 +17,7 @@ La IA es opcional. Cada ayuda (sugerencia de estilo, capítulos, ortografía, t�
 ## Funciones
 
 **Imágenes**
-- Ocho diseños en cuatro estilos: bold editorial, color vivo, minimalista y artístico.
+- Doce diseños en cuatro estilos: bold editorial, color vivo, minimalista y artístico.
 - El formato se sugiere según la longitud del texto, y los textos largos se reparten en un carrusel de hasta 10 imágenes.
 - La letra se ajusta sola al espacio; en las historias deja libres las zonas que tapa la interfaz de Instagram.
 - PNG a 2160 px de ancho, carrusel en ZIP, generación en lote y galería para reabrir y volver a descargar.
@@ -26,7 +26,7 @@ La IA es opcional. Cada ayuda (sugerencia de estilo, capítulos, ortografía, t�
 
 **Libros**
 - Chats de WhatsApp de Android e iOS, en español o inglés, con las fotos del .zip.
-- Un mensaje por página. El nombre, la fecha y la hora de cada mensaje se activan por separado.
+- Un mensaje por página, burbujas de chat (v2) o mensajes seguidos. El nombre, la fecha y la hora de cada mensaje se activan por separado.
 - Capítulos por mes en los chats y por títulos en los textos.
 - Cuatro portadas, cuatro tipografías y cuatro paletas; portadilla, dedicatoria, índice con números de página, cabeceras y ornamentos.
 - PDF con sangrado para imprenta (A5, 6 × 9 in o cuadrado de 21 cm), EPUB 3 validado con epubcheck y PNG por página.
@@ -81,4 +81,4 @@ Para validar también el EPUB con epubcheck, indica la ruta del jar: `EPUBCHECK_
 - [x] Imágenes v1
 - [x] Libros v1 (WhatsApp con un mensaje por página, PDF, EPUB y PNG)
 - [x] Extras: marca personal, generación en lote, galería, fotos reales
-- [ ] v2: chat con burbujas y más plantillas
+- [x] v2: chat con burbujas y cuatro plantillas nuevas (Titular, Franja, Marco, Cuaderno)

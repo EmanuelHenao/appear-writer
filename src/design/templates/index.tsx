@@ -514,6 +514,158 @@ const arteAcuarela: TemplateDef = {
   },
 };
 
+
+// 9 · Titular: portada de periódico, una palabra enorme arriba y el resto debajo.
+const boldTitular: TemplateDef = {
+  id: "bold-titular",
+  family: "bold",
+  label: "Titular",
+  defaultPalette: "tierra",
+  altPalettes: ["noir", "energia", "vino"],
+  defaultFont: "anton",
+  render: (spec) => {
+    const p = spec.palette;
+    const img = onImage(spec);
+    const inset = safeInset(spec);
+    const fg = img ? "#FFFFFF" : p.fg;
+    const rule = `4px solid ${fg}`;
+    return (
+      <div style={root(spec)}>
+        <Backdrop spec={spec} />
+        <div style={{ position: "absolute", inset: 0, padding: `${72 + inset.top}px 64px ${64 + inset.bottom}px`, display: "flex", flexDirection: "column", gap: 28, color: fg }}>
+          <div style={{ borderTop: rule, borderBottom: `1px solid ${fg}`, padding: "14px 0", display: "flex", justifyContent: "space-between", fontFamily: MONO_DETAIL, fontSize: 22, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+            <span>{spec.label || "Edición de hoy"}</span>
+            <Counter spec={spec} />
+          </div>
+          <FitText max={sz(spec, 240)} boxStyle={{ alignItems: "flex-start" }} style={{ fontFamily: font(spec, "anton"), lineHeight: 0.92, textTransform: "uppercase", letterSpacing: "-0.01em" }}>
+            <Emph text={spec.text} emphasis={spec.emphasis} emStyle={{ color: img ? "#FFFFFF" : p.accent2 }} />
+          </FitText>
+          <div style={{ borderTop: rule, paddingTop: 16, display: "flex", justifyContent: "space-between", fontFamily: MONO_DETAIL, fontSize: 24 }}>
+            <Handle spec={spec} />
+            <span>№ {String(spec.index).padStart(2, "0")}</span>
+          </div>
+        </div>
+      </div>
+    );
+  },
+};
+
+// 10 · Franja: una banda de color cruza en diagonal y lleva el destacado.
+const vivoFranja: TemplateDef = {
+  id: "vivo-franja",
+  family: "vivo",
+  label: "Franja",
+  defaultPalette: "vino",
+  altPalettes: ["pop", "tinta", "kraft"],
+  defaultFont: "unbounded",
+  render: (spec) => {
+    const p = spec.palette;
+    const img = onImage(spec);
+    const inset = safeInset(spec);
+    const fg = img ? "#FFFFFF" : p.fg;
+    const em = spec.emphasis.length ? spec.emphasis.join(" ") : "";
+    const main = em ? spec.text.replace(em, "").trim() || spec.text : spec.text;
+    const h = spec.height - inset.top - inset.bottom;
+    return (
+      <div style={root(spec)}>
+        <Backdrop spec={spec} />
+        <div style={{ position: "absolute", left: 0, right: 0, top: inset.top, height: h * 0.6, padding: "88px 76px 24px", display: "flex", flexDirection: "column", gap: 32, color: fg, boxSizing: "border-box" }}>
+          <div style={{ fontFamily: MONO_DETAIL, fontSize: 24, letterSpacing: "0.14em", textTransform: "uppercase", display: "flex", justifyContent: "space-between", minHeight: 28 }}>
+            <span>{spec.label ?? ""}</span>
+            <Counter spec={spec} />
+          </div>
+          <FitText max={sz(spec, 120)} boxStyle={{ alignItems: "flex-end" }} style={{ fontFamily: font(spec, "unbounded"), fontWeight: 700, lineHeight: 1.05, letterSpacing: "-0.02em" }}>
+            {main}
+          </FitText>
+        </div>
+        <div style={{ position: "absolute", left: "-12%", right: "-12%", top: inset.top + h * 0.63, height: h * 0.2, background: p.accent, transform: "rotate(-6deg)", display: "flex", padding: "0 18%", boxSizing: "border-box" }}>
+          <FitText max={sz(spec, em ? 130 : 44)} boxStyle={{ alignItems: "center", justifyContent: "center" }} style={{ fontFamily: em ? font(spec, "unbounded") : MONO_DETAIL, fontWeight: 700, lineHeight: 1, color: p.onAccent, textAlign: "center" }}>
+            {em || spec.brand.handle || "✦"}
+          </FitText>
+        </div>
+        {em ? (
+          <div style={{ position: "absolute", left: 76, right: 76, bottom: 76 + inset.bottom, fontFamily: MONO_DETAIL, fontSize: 26, color: fg, display: "flex", justifyContent: "flex-end" }}>
+            <Handle spec={spec} />
+          </div>
+        ) : null}
+      </div>
+    );
+  },
+};
+
+// 11 · Marco: un filete fino enmarca una frase centrada, como una lámina.
+const minimalMarco: TemplateDef = {
+  id: "minimal-marco",
+  family: "minimal",
+  label: "Marco",
+  defaultPalette: "acuarela",
+  altPalettes: ["tierra", "tinta", "salvia"],
+  defaultFont: "playfair",
+  render: (spec) => {
+    const p = spec.palette;
+    const img = onImage(spec);
+    const inset = safeInset(spec);
+    const fg = img ? "#FFFFFF" : p.fg;
+    return (
+      <div style={root(spec)}>
+        <Backdrop spec={spec} />
+        <div style={{ position: "absolute", left: 56, right: 56, top: 56 + inset.top, bottom: 56 + inset.bottom, border: `2px solid ${fg}`, padding: 10 }}>
+          <div style={{ width: "100%", height: "100%", boxSizing: "border-box", border: `1px solid ${fg}`, padding: "80px 72px", display: "flex", flexDirection: "column", alignItems: "center", gap: 36, color: fg, textAlign: "center" }}>
+            <div style={{ fontFamily: SANS_DETAIL, fontSize: 20, letterSpacing: "0.4em", textTransform: "uppercase", color: img ? "rgba(255,255,255,0.85)" : p.muted, minHeight: 24 }}>
+              {spec.label ?? ""}
+            </div>
+            <FitText max={sz(spec, 104)} boxStyle={{ alignItems: "center", width: "100%" }} style={{ fontFamily: font(spec, "playfair"), fontStyle: "italic", fontWeight: 400, lineHeight: 1.2, textWrap: "balance" }}>
+              <Emph text={spec.text} emphasis={spec.emphasis} emStyle={{ fontStyle: "normal", fontWeight: 600 }} />
+            </FitText>
+            <div style={{ fontFamily: SANS_DETAIL, fontSize: 20, letterSpacing: "0.3em", textTransform: "uppercase", color: img ? "rgba(255,255,255,0.85)" : p.muted, display: "flex", gap: 32 }}>
+              <Handle spec={spec} />
+              <Counter spec={spec} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  },
+};
+
+// 12 · Cuaderno: hoja rayada con margen rojo y letra escrita a mano.
+const arteCuaderno: TemplateDef = {
+  id: "arte-cuaderno",
+  family: "arte",
+  label: "Cuaderno",
+  defaultPalette: "tierra",
+  altPalettes: ["acuarela", "salvia", "kraft"],
+  defaultFont: "caveat",
+  render: (spec) => {
+    const p = spec.palette;
+    const img = onImage(spec);
+    const inset = safeInset(spec);
+    const line = 64;
+    const paper = (
+      <>
+        <div style={{ position: "absolute", inset: 0, background: `repeating-linear-gradient(180deg, transparent 0, transparent ${line - 2}px, ${p.accent2}66 ${line - 2}px, ${p.accent2}66 ${line}px)`, backgroundPosition: "0 40px" }} />
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: 140, width: 3, background: "#D9534F99" }} />
+        <Grain id={`cu-${spec.index}`} opacity={0.18} />
+      </>
+    );
+    return (
+      <div style={root(spec)}>
+        <Backdrop spec={spec} styleLayer={paper} />
+        <div style={{ position: "absolute", inset: 0, padding: `${104 + inset.top}px 72px ${88 + inset.bottom}px 180px`, display: "flex", flexDirection: "column", gap: 24, color: img ? "#FFFFFF" : p.fg }}>
+          <div style={{ fontFamily: "'Caveat Variable', cursive", fontSize: 40, color: img ? "#FFFFFF" : p.muted, minHeight: 44 }}>{spec.label ?? ""}</div>
+          <FitText max={sz(spec, 150)} boxStyle={{ alignItems: "flex-start" }} style={{ fontFamily: font(spec, "caveat"), fontWeight: 600, lineHeight: 1.08 }}>
+            <Emph text={spec.text} emphasis={spec.emphasis} emStyle={{ color: img ? "#FFFFFF" : p.accent, textDecoration: "underline", textDecorationThickness: "0.06em", textUnderlineOffset: "0.12em" }} />
+          </FitText>
+          <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "'Caveat Variable', cursive", fontSize: 44 }}>
+            <Handle spec={spec} />
+            <Counter spec={spec} />
+          </div>
+        </div>
+      </div>
+    );
+  },
+};
+
 export const TEMPLATES: TemplateDef[] = [
   boldPoster,
   vivoBloques,
@@ -523,6 +675,10 @@ export const TEMPLATES: TemplateDef[] = [
   vivoAtardecer,
   minimalCentro,
   arteAcuarela,
+  boldTitular,
+  vivoFranja,
+  minimalMarco,
+  arteCuaderno,
 ];
 
 export function getTemplate(id: string): TemplateDef {

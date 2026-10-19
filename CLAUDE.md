@@ -49,7 +49,7 @@ docker compose up -d --build
 - `src/design/`: motor de imágenes compartido entre cliente y servidor.
   - `fit.ts`: lectura determinista del texto (longitud, formato sugerido, carrusel, destacado).
   - `fonts.ts` y `palettes.ts`: registros (fuentes de @fontsource, paletas con roles fijos).
-  - `templates/`: las 8 plantillas como componentes React con estilos en línea; `autofit.ts` ajusta la letra.
+  - `templates/`: las 12 plantillas como componentes React con estilos en línea; `autofit.ts` ajusta la letra.
   - `compose.ts`: esquema de opciones (zod), valores sugeridos, propuestas y diapositivas.
 - `src/lib/render/`: Chromium compartido (Playwright). Los documentos se sirven desde un origen virtual (`http://appear.local/`) con fuentes y archivos locales. `image.ts` renderiza las mismas plantillas con `react-dom/server`.
 - `src/lib/ai/`: `detect.ts` detecta el proveedor por la key; `client.ts` usa el SDK oficial de Anthropic (salida estructurada) y HTTP directo para OpenAI/compatibles y Gemini; `tasks.ts` contiene los prompts.
