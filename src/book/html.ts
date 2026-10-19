@@ -2,6 +2,7 @@ import { fontStack, type FontId } from "@/design/fonts";
 import type { PhotoRef } from "@/design/spec";
 import { coverHtml, esc } from "./covers";
 import { BLEED_MM, bookPalette, PAGE_SIZES, type BookOptions } from "./options";
+import { hasFormat, type Run } from "./edits";
 import { PAGINATE_JS } from "./paginate.js";
 import { formatDate, formatLongDate, type Chapter, type KeyedBlock } from "./structure";
 
@@ -63,6 +64,25 @@ function metaLine(b: Extract<KeyedBlock, { type: "message" }>, o: BookOptions): 
 
 type MsgBlock = Extract<KeyedBlock, { type: "message" }>;
 
+const SIZE_EM = { s: 0.85, m: 1, l: 1.3, xl: 1.65 } as const;
+
+/** Texto con formato: cada tramo es un span con su estilo; sin formato, el texto tal cual. */
+function textHtml(text: string, runs: Run[] | undefined): string {
+  if (!runs || !hasFormat(runs)) return esc(text);
+  return runs
+    .map((r) => {
+      const st: string[] = [];
+      if (r.b) st.push("font-weight:700");
+      if (r.i) st.push("font-style:italic");
+      if (r.u) st.push("text-decoration:underline");
+      if (r.font) st.push(`font-family:${fontStack(r.font).replace(/"/g, "'")}`);
+      if (r.size) st.push(`font-size:${SIZE_EM[r.size]}em`);
+      if (r.color) st.push(`color:var(--${r.color})`);
+      return st.length ? `<span style="${esc(st.join(";"))}">${esc(r.t)}</span>` : esc(r.t);
+    })
+    .join("");
+}
+
 const keyAttr = (b: KeyedBlock) => ` data-key="${esc(b.key)}"`;
 const ALIGN = { izquierda: "left", centro: "center", derecha: "right" } as const;
 const alignAttr = (b: KeyedBlock) => (b.edit?.align ? ` style="text-align:${ALIGN[b.edit.align]}"` : "");
@@ -90,7 +110,7 @@ function messageHtml(b: MsgBlock, input: BookDocInput): string {
   const meta = metaLine(b, o);
   const metaHtml = meta ? `<p class="meta" data-meta-end>${meta}</p>` : "";
   const k = keyAttr(b);
-  const text = (cls: string) => (b.text ? `<p class="${cls}" data-split${alignAttr(b)}>${esc(b.text)}</p>` : "");
+  const text = (cls: string) => (b.text ? `<p class="${cls}" data-split${alignAttr(b)}>${textHtml(b.text, e?.runs)}</p>` : "");
   const urls = photoUrls(b, input);
   const ownText = () => (b.text ? `<div class="msg-own" data-mode="own" data-page-class="msg-page" data-long-class="msg msg-long"${k}>${text("msg-text")}${metaHtml}</div>` : "");
   const cita = () =>
@@ -136,6 +156,27 @@ function messageHtml(b: MsgBlock, input: BookDocInput): string {
   return `${before}<div class="msg"${k}>${images}${text("msg-text")}${metaHtml}</div>`;
 }
 
+/** Parte los tramos en párrafos por las líneas en blanco, sin perder el formato. */
+export function splitParagraphs(runs: Run[]): Run[][] {
+  const out: Run[][] = [[]];
+  for (const r of runs) {
+    const pieces = r.t.split(/\n\s*\n/);
+    pieces.forEach((t, i) => {
+      if (i > 0) out.push([]);
+      if (t) out[out.length - 1].push({ ...r, t });
+    });
+  }
+  return out
+    .map((rs) => {
+      const trimmed = rs.map((r) => ({ ...r }));
+      if (trimmed[0]) trimmed[0].t = trimmed[0].t.replace(/^\s+/, "");
+      const last = trimmed[trimmed.length - 1];
+      if (last) last.t = last.t.replace(/\s+$/, "");
+      return trimmed.filter((r) => r.t);
+    })
+    .filter((rs) => rs.length);
+}
+
 function insertHtml(b: Extract<KeyedBlock, { type: "insert" }>, input: BookDocInput): string {
   const ins = b.insert;
   const k = keyAttr(b);
@@ -151,13 +192,12 @@ function insertHtml(b: Extract<KeyedBlock, { type: "insert" }>, input: BookDocIn
         return `<div class="ph-own" data-mode="own" data-page-class="photo-page"${k}><figure class="frame big"><img src="${esc(url)}" alt="">${ins.caption ? `<figcaption>${esc(ins.caption)}</figcaption>` : ""}</figure></div>`;
       return fullPhoto(b, url);
     case "libre": {
-      const text = (ins.runs ?? []).map((r) => r.t).join("");
-      const paras = text.split(/\n{2,}/).map((t) => t.trim()).filter(Boolean);
+      const paras = splitParagraphs(ins.runs ?? []);
       if (!paras.length && !ins.title) return "";
       // La página libre empieza siempre en una página nueva.
       const start = ` data-newpage="1" data-page-class="text"`;
       const title = ins.title ? `<h3 class="libre-title"${k}${start}>${esc(ins.title)}</h3>` : "";
-      return title + paras.map((t, i) => `<p class="para libre" data-split${k}${i === 0 && !title ? start : ""}>${esc(t)}</p>`).join("");
+      return title + paras.map((rs, i) => `<p class="para libre" data-split${k}${i === 0 && !title ? start : ""}>${textHtml(rs.map((r) => r.t).join(""), rs)}</p>`).join("");
     }
   }
 }
@@ -170,7 +210,7 @@ function blockHtml(b: KeyedBlock, input: BookDocInput, first: boolean): string {
       return `<figure class="figure"><img src="${esc(input.mediaUrl(b.src))}" alt="">${b.caption ? `<figcaption>${esc(b.caption)}</figcaption>` : ""}</figure>`;
     case "paragraph": {
       const verse = b.text.includes("\n");
-      return `<p class="para${verse ? " verse" : ""}${first && !verse ? " first" : ""}" data-split${keyAttr(b)}${alignAttr(b)}>${esc(b.text)}</p>`;
+      return `<p class="para${verse ? " verse" : ""}${first && !verse ? " first" : ""}" data-split${keyAttr(b)}${alignAttr(b)}>${textHtml(b.text, b.edit?.runs)}</p>`;
     }
     case "message":
       return messageHtml(b, input);

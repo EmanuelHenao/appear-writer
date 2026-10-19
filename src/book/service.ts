@@ -9,12 +9,18 @@ import { buildBookHtml } from "./html";
 import { saveBook, type BookProject } from "./project";
 import { buildChapters } from "./structure";
 
-const FONTS_FOR = (font: string): FontId[] => [font as FontId, "fraunces", "jost"];
+/** Fuentes del documento: la del libro, las de la portada y las que use el texto con formato. */
+function fontsFor(book: BookProject): FontId[] {
+  const used = new Set<FontId>([book.options.font as FontId, "fraunces", "jost"]);
+  const runs = [...Object.values(book.edits?.blocks ?? {}).flatMap((e) => e.runs ?? []), ...(book.edits?.inserts ?? []).flatMap((i) => i.runs ?? [])];
+  for (const r of runs) if (r.font) used.add(r.font);
+  return [...used];
+}
 
 export async function bookHtml(book: BookProject, target: "preview" | "print", previewLimit = 0, coverOnly = false, focusKey?: string): Promise<string> {
   const chapters = coverOnly ? [] : buildChapters(book.sources, book.options, book.ai, book.edits);
   const base = target === "print" ? VIRTUAL_ORIGIN : "/api/";
-  const fontCss = await fontFaceCss(FONTS_FOR(book.options.font), base);
+  const fontCss = await fontFaceCss(fontsFor(book), base);
   const mediaUrl =
     target === "print"
       ? (f: string) => `${VIRTUAL_ORIGIN}data/books/${book.id}/media/${encodeURIComponent(f)}`

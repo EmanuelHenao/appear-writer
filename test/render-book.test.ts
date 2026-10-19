@@ -10,7 +10,7 @@ import { bookHtml, exportEpub, exportPdf, exportPngs } from "@/book/service";
 import { parsePlainText } from "@/import/text";
 import { parseWhatsApp } from "@/import/whatsapp";
 import { importFile } from "@/import";
-import { getBrowser } from "@/lib/render/browser";
+import { getBrowser, openDoc } from "@/lib/render/browser";
 import { chatZip } from "./fixtures";
 
 const DATA = path.resolve("test-results/data-book");
@@ -211,6 +211,30 @@ describe("render del libro", () => {
       const out = execFileSync("java", ["-jar", process.env.EPUBCHECK_JAR, file], { encoding: "utf8" });
       expect(out).toMatch(/0 errores fatales \/ 0 errores|0 fatals \/ 0 errors/);
     }
+  });
+
+  it("v6: el texto con formato se conserva al partirse entre páginas", async () => {
+    const prose = proseSource();
+    const book = project([prose]);
+    const long = prose.blocks[1].type === "paragraph" ? prose.blocks[1].text : "";
+    const boldLen = long.length - 200;
+    book.edits = {
+      blocks: { [`${prose.id}:1`]: { runs: [{ t: long.slice(0, 100) }, { t: long.slice(100, 100 + boldLen), b: true, font: "lora", color: "accent" }, { t: long.slice(100 + boldLen) }] } },
+      inserts: [],
+    };
+    const html = await bookHtml(book, "print");
+    expect(html).toContain("font-weight:700");
+    expect(html).toContain("lora");
+    const { page, context } = await openDoc({ html, width: 800, height: 1000, scale: 1, media: "print", readySelector: "body[data-ready]" });
+    const bold = await page.evaluate(() => {
+      const spans = Array.from(document.querySelectorAll(".page span[style*='font-weight:700']"));
+      return { pages: new Set(spans.map((s) => s.closest(".page"))).size, chars: spans.reduce((a, s) => a + (s.textContent?.length ?? 0), 0) };
+    });
+    await context.close();
+    // El párrafo ocupa varias páginas y la negrita sigue en todas.
+    expect(bold.pages).toBeGreaterThanOrEqual(2);
+    // Siguen todos los caracteres en negrita, menos los espacios que se recortan al partir.
+    expect(bold.chars).toBeGreaterThan(boldLen - 10);
   });
 
   it("la vista previa corta en el límite de páginas", async () => {

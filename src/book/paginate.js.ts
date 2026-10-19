@@ -25,6 +25,25 @@ export const PAGINATE_JS = String.raw`
   function textTarget(el) {
     return el.querySelector("[data-split]") || (el.hasAttribute("data-split") ? el : null);
   }
+  // Copia en dst los caracteres [a, b) de src conservando sus spans.
+  function setRange(dst, src, a, b) {
+    var copy = src.cloneNode(true);
+    var pos = 0;
+    var walker = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+    var nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(function (n) {
+      var len = n.textContent.length;
+      var s0 = Math.max(a, pos) - pos, s1 = Math.min(b, pos + len) - pos;
+      n.textContent = s1 > s0 ? n.textContent.slice(s0, s1) : "";
+      pos += len;
+    });
+    // Quita los spans que quedaron vacíos.
+    Array.prototype.slice.call(copy.querySelectorAll("span")).reverse().forEach(function (sp) { if (!sp.textContent) sp.remove(); });
+    while (dst.firstChild) dst.removeChild(dst.firstChild);
+    while (copy.firstChild) dst.appendChild(copy.firstChild);
+  }
+
   // Coloca un elemento partiéndolo por palabras si no cabe en la página.
   function place(el) {
     body.appendChild(el);
@@ -40,7 +59,12 @@ export const PAGINATE_JS = String.raw`
     var rest = el;
     while (true) {
       var t = textTarget(rest);
-      var parts = t.textContent.split(/(\s+)/);
+      // Copia del texto (con sus spans de formato) para recortarla por caracteres.
+      var src = t.cloneNode(true);
+      var full = t.textContent;
+      var parts = full.split(/(\s+)/);
+      var cut = [0];
+      for (var k = 0; k < parts.length; k++) cut.push(cut[k] + parts[k].length);
       var head = rest.cloneNode(true);
       var meta = head.querySelector("[data-meta-end]");
       if (meta) meta.remove();
@@ -49,7 +73,7 @@ export const PAGINATE_JS = String.raw`
       var lo = 0, hi = parts.length;
       while (lo < hi) {
         var mid = Math.ceil((lo + hi) / 2);
-        ht.textContent = parts.slice(0, mid).join("");
+        setRange(ht, src, 0, cut[mid]);
         if (overflows()) hi = mid - 1; else lo = mid;
       }
       // Se evita dejar una o dos palabras sueltas al pie de la página.
@@ -59,14 +83,17 @@ export const PAGINATE_JS = String.raw`
         newPage("text");
         continue;
       }
-      ht.textContent = parts.slice(0, lo).join("").replace(/\s+$/, "");
+      var end = cut[lo];
+      while (end > 0 && /\s/.test(full.charAt(end - 1))) end--;
+      setRange(ht, src, 0, end);
       head.classList.add("split-head");
-      var remaining = parts.slice(lo).join("").replace(/^\s+/, "");
-      if (!remaining) { body.removeChild(head); body.appendChild(rest); return; }
+      var start = cut[lo];
+      while (start < full.length && /\s/.test(full.charAt(start))) start++;
+      if (start >= full.length) { body.removeChild(head); body.appendChild(rest); return; }
       var tail = rest.cloneNode(true);
       tail.classList.add("cont");
       tail.classList.remove("first");
-      textTarget(tail).textContent = remaining;
+      setRange(textTarget(tail), src, start, full.length);
       newPage("text");
       body.appendChild(tail);
       if (!overflows()) return;

@@ -98,7 +98,7 @@ export const isHighlighted = (e: BlockEdit | undefined) => !!e?.design && e.desi
 const sameStyle = (a: RunStyle, b: RunStyle) =>
   !!a.b === !!b.b && !!a.i === !!b.i && !!a.u === !!b.u && a.font === b.font && a.size === b.size && a.color === b.color;
 
-const styleOf = ({ t: _t, ...s }: Run): RunStyle => s;
+const styleOf = (r: Run): RunStyle => ({ b: r.b, i: r.i, u: r.u, font: r.font, size: r.size, color: r.color });
 
 function clean(s: RunStyle): RunStyle {
   const out: RunStyle = {};
