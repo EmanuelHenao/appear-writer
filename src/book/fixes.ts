@@ -9,9 +9,14 @@ function matchCase(original: string, replacement: string): string {
   return replacement;
 }
 
-export function applyFixes(text: string, fixes: Record<string, string>): string {
+/** Prepara las correcciones una sola vez (la expresión regular) para aplicarlas a muchos textos. */
+export function compileFixes(fixes: Record<string, string>): (text: string) => string {
   const words = Object.keys(fixes).filter((w) => fixes[w] && fixes[w] !== w);
-  if (!words.length || !text) return text;
+  if (!words.length) return (text) => text;
   const re = new RegExp(`(?<!\\p{L})(${words.sort((a, b) => b.length - a.length).map(esc).join("|")})(?!\\p{L})`, "giu");
-  return text.replace(re, (m) => matchCase(m, fixes[m.toLowerCase()] ?? m));
+  return (text) => (text ? text.replace(re, (m) => matchCase(m, fixes[m.toLowerCase()] ?? m)) : text);
+}
+
+export function applyFixes(text: string, fixes: Record<string, string>): string {
+  return compileFixes(fixes)(text);
 }

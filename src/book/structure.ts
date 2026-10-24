@@ -1,6 +1,6 @@
 import type { Block, Source } from "./model";
 import { emptyEdits, mapRunText, runsToPlain, type BlockEdit, type BookEdits, type Insert } from "./edits";
-import { applyFixes } from "./fixes";
+import { compileFixes } from "./fixes";
 import { chapterRuleOf, type BookOptions, type ChapterRule } from "./options";
 
 // Arma los capítulos de forma determinista. La IA solo puede aportar
@@ -63,6 +63,17 @@ export function dayRange(a: string, b: string): string {
   return `${da} de ${MONTHS[ma - 1]} – ${db} de ${MONTHS[mb - 1]} de ${ya}`;
 }
 
+/** Menor y mayor de una lista sin `Math.min(...lista)`, que desborda la pila con listas grandes. */
+function range(list: number[]): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const n of list) {
+    if (n < lo) lo = n;
+    if (n > hi) hi = n;
+  }
+  return [lo, hi];
+}
+
 function groupBy(keyed: KeyedBlock[], keyOf: (b: KeyedBlock) => string): [string, KeyedBlock[]][] {
   const groups = new Map<string, KeyedBlock[]>();
   for (const b of keyed) {
@@ -82,8 +93,9 @@ function chatChapters(src: Source, rule: ChapterRule, silenceDays: number): Chap
     return groupBy(keyed, (b) => dayOf(b)?.slice(0, 4) ?? "sin-fecha").map(([y, blocks]) => {
       const msgs = msgsOf(blocks);
       const months = msgs.map((m) => (m.date ? Number(m.date.slice(5, 7)) : 0)).filter(Boolean);
-      const range = months.length ? (Math.min(...months) === Math.max(...months) ? `en ${MONTHS[months[0] - 1]}` : `de ${MONTHS[Math.min(...months) - 1]} a ${MONTHS[Math.max(...months) - 1]}`) : "";
-      return { key: `${src.id}:y${y}`, title: y === "sin-fecha" ? "Sin fecha" : y, subtitle: `${msgCount(msgs.length)}${range ? ` · ${range}` : ""}`, blocks };
+      const [a, b] = range(months);
+      const span = months.length ? (a === b ? `en ${MONTHS[a - 1]}` : `de ${MONTHS[a - 1]} a ${MONTHS[b - 1]}`) : "";
+      return { key: `${src.id}:y${y}`, title: y === "sin-fecha" ? "Sin fecha" : y, subtitle: `${msgCount(msgs.length)}${span ? ` · ${span}` : ""}`, blocks };
     });
   }
 
@@ -109,11 +121,12 @@ function chatChapters(src: Source, rule: ChapterRule, silenceDays: number): Chap
     const msgs = msgsOf(blocks);
     const days = msgs.map((m) => (m.date ? Number(m.date.slice(8, 10)) : 0)).filter(Boolean);
     const month = ym === "sin-fecha" ? "" : MONTHS[Number(ym.slice(5, 7)) - 1];
-    const range = days.length ? (Math.min(...days) === Math.max(...days) ? `el ${days[0]} de ${month}` : `del ${Math.min(...days)} al ${Math.max(...days)} de ${month}`) : "";
+    const [a, b] = range(days);
+    const span = days.length ? (a === b ? `el ${a} de ${month}` : `del ${a} al ${b} de ${month}`) : "";
     return {
       key: `${src.id}:${ym}`,
       title: ym === "sin-fecha" ? "Sin fecha" : monthTitle(ym),
-      subtitle: `${msgCount(msgs.length)}${range ? ` · ${range}` : ""}`,
+      subtitle: `${msgCount(msgs.length)}${span ? ` · ${span}` : ""}`,
       blocks,
     };
   });
@@ -168,11 +181,12 @@ export function buildChapters(sources: Source[], options: BookOptions, ai: AiRes
   const chapters = applyEdits(auto, edits);
   const fixes = options.fixes ?? {};
   if (Object.keys(fixes).length) {
+    const fix = compileFixes(fixes);
     for (const c of chapters) {
       c.blocks = c.blocks.map((b) => {
         if (b.type !== "paragraph" && b.type !== "message") return b;
-        const edit = b.edit?.runs ? { ...b.edit, runs: mapRunText(b.edit.runs, (t) => applyFixes(t, fixes)) } : b.edit;
-        return { ...b, text: applyFixes(b.text, fixes), edit };
+        const edit = b.edit?.runs ? { ...b.edit, runs: mapRunText(b.edit.runs, fix) } : b.edit;
+        return { ...b, text: fix(b.text), edit };
       });
     }
   }
@@ -190,7 +204,9 @@ function applyEdits(chapters: Chapter[], edits: BookEdits): Chapter[] {
   const after = new Map<string, Insert[]>();
   for (const ins of edits.inserts) {
     const m = ins.side === "antes" ? before : after;
-    m.set(ins.at, [...(m.get(ins.at) ?? []), ins]);
+    const list = m.get(ins.at);
+    if (list) list.push(ins);
+    else m.set(ins.at, [ins]);
   }
   const insertBlocks = (list: Insert[] | undefined): KeyedBlock[] => (list ?? []).map((insert) => ({ type: "insert", insert, key: `ins:${insert.id}` }));
 
@@ -231,10 +247,13 @@ function withEdit(b: KeyedBlock, e: BlockEdit): KeyedBlock {
 /** Fragmento corto de cada capítulo para pedir títulos a la IA. */
 export function chapterExcerpt(c: Chapter, max = 600): string {
   const parts: string[] = [];
+  let length = 0;
   for (const b of c.blocks) {
-    if (b.type === "paragraph" || b.type === "heading") parts.push(b.text);
-    else if (b.type === "message") parts.push(`${b.author}: ${b.text}`);
-    if (parts.join("\n").length > max) break;
+    const t = b.type === "paragraph" || b.type === "heading" ? b.text : b.type === "message" ? `${b.author}: ${b.text}` : null;
+    if (t === null) continue;
+    parts.push(t);
+    length += t.length + 1;
+    if (length > max) break;
   }
   return parts.join("\n").slice(0, max);
 }

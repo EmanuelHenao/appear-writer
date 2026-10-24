@@ -25,6 +25,8 @@ export const BookOptionsSchema = z.object({
     showName: z.boolean(),
     showDate: z.boolean(),
     showTime: z.boolean(),
+    /** Cómo se llama en el libro cada persona del chat: nombre original → nombre a mostrar. */
+    names: z.record(z.string().max(120), z.string().max(80)).default({}),
     ornaments: z.boolean(),
     chatPhotos: z.boolean(),
     stockPhotos: z.boolean(),
@@ -132,12 +134,13 @@ export function suggestedBookOptions(sources: Source[]): BookOptions {
     palette: "verde-oro",
     cover: { template: onlyChats ? "formas" : "tela", title, subtitle, author: "" },
     content: {
-      onePerPage: onlyChats,
+      onePerPage: false,
       bubbles: false,
       rightAuthor: chats[0]?.meta.participants?.[1] ?? "",
       showName: true,
       showDate: true,
       showTime: false,
+      names: {},
       ornaments: true,
       chatPhotos: hasImages,
       stockPhotos: false,
@@ -152,4 +155,14 @@ export function suggestedBookOptions(sources: Source[]): BookOptions {
     fixes: {},
     outputs: { pdf: true, epub: true, png: false },
   };
+}
+
+/** El nombre con que aparece una persona del chat (el original si no se renombró). */
+export function shownName(o: BookOptions, author: string): string {
+  return o.content.names[author]?.trim() || author;
+}
+
+/** Qué datos lleva un mensaje: lo que diga su ficha o, si no dice nada, lo del libro. */
+export function metaFlags(o: BookOptions, meta?: { name?: boolean; date?: boolean; time?: boolean }): { name: boolean; date: boolean; time: boolean } {
+  return { name: meta?.name ?? o.content.showName, date: meta?.date ?? o.content.showDate, time: meta?.time ?? o.content.showTime };
 }

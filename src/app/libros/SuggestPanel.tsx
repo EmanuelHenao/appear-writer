@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft } from "@/components/icons";
 import { Button, SuggestDot } from "@/components/ui";
-import { setBlockEdit, type BookEdits } from "@/book/edits";
+import { setBlockEdits, type BookEdits } from "@/book/edits";
 import type { Row } from "@/book/rows";
 import type { Suggestion } from "@/book/suggest";
 
@@ -40,10 +40,8 @@ export function SuggestPanel({
   const highlight = picked("destacar");
 
   function apply() {
-    let e = edits;
-    for (const k of hide) e = setBlockEdit(e, k, { hidden: true });
-    for (const k of highlight) if (!hide.has(k)) e = setBlockEdit(e, k, { design: "cita" });
-    onApply(e);
+    const e = setBlockEdits(edits, hide, () => ({ hidden: true }));
+    onApply(setBlockEdits(e, [...highlight].filter((k) => !hide.has(k)), () => ({ design: "cita" })));
   }
 
   const list = suggestions.filter((s) => s.kind === tab);

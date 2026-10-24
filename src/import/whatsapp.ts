@@ -98,7 +98,7 @@ export function parseWhatsApp(raw: string): ParsedChat {
 
   const blocks: ParsedChat["blocks"] = [];
   const attachments: string[] = [];
-  const participants: string[] = [];
+  const participants = new Set<string>();
   let skipped = 0;
   for (const m of msgs) {
     if (!m.author) {
@@ -125,10 +125,10 @@ export function parseWhatsApp(raw: string): ParsedChat {
       skipped++;
       continue;
     }
-    if (!participants.includes(m.author)) participants.push(m.author);
+    participants.add(m.author);
     blocks.push({ type: "message", author: m.author, date: m.date, text, media });
   }
-  return { blocks, participants, attachments, skipped };
+  return { blocks, participants: [...participants], attachments, skipped };
 }
 
 /** «Chat de WhatsApp con Ana.txt» → «Ana». */

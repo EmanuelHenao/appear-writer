@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { getBook } from "@/book/project";
-import { exportEpub, exportPdf, exportPngs } from "@/book/service";
+import { exportEpub, exportPdf, exportPngZip } from "@/book/service";
 import { errorResponse, fail } from "@/lib/http";
-import { attachment, slugify, zipFiles } from "@/lib/zip";
+import { attachment, slugify } from "@/lib/zip";
 
 export const maxDuration = 900;
 
@@ -26,10 +26,9 @@ export async function POST(req: Request, ctx: RouteContext<"/api/books/[id]/expo
       const epub = await exportEpub(book);
       return new Response(new Uint8Array(epub), { headers: { "Content-Type": "application/epub+zip", "Content-Disposition": attachment(`${name}.epub`) } });
     }
-    const pngs = await exportPngs(book);
-    const zip = await zipFiles(pngs.map((data, i) => ({ name: `${name}-${String(i + 1).padStart(4, "0")}.png`, data })));
-    return new Response(new Uint8Array(zip), {
-      headers: { "Content-Type": "application/zip", "Content-Disposition": attachment(`${name}-paginas.zip`), "X-Pages": String(pngs.length) },
+    const { stream, pages } = await exportPngZip(book, name);
+    return new Response(stream, {
+      headers: { "Content-Type": "application/zip", "Content-Disposition": attachment(`${name}-paginas.zip`), "X-Pages": String(pages) },
     });
   } catch (e) {
     return errorResponse(e);

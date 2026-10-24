@@ -14,13 +14,27 @@ export type Row =
 
 export const INSERT_LABEL = { separador: "Separador", libre: "Página libre", imagen: "Imagen", blanco: "Página en blanco" } as const;
 
+/**
+ * Lo único de las ediciones que cambia las filas: los cortes de capítulo a
+ * mano y las páginas añadidas. Ocultar, destacar o editar no las cambia
+ * (la lista lo lee de las ediciones al pintar), así que la lista solo se
+ * rehace cuando cambia esta clave.
+ */
+export function structuralKey(edits: BookEdits): string {
+  const chapters: [string, unknown][] = [];
+  for (const k in edits.blocks) if (edits.blocks[k].chapter) chapters.push([k, edits.blocks[k].chapter]);
+  return JSON.stringify({ chapters, inserts: edits.inserts });
+}
+
+export function structuralEdits(key: string): BookEdits {
+  const { chapters, inserts } = JSON.parse(key) as { chapters: [string, BookEdits["blocks"][string]["chapter"]][]; inserts: BookEdits["inserts"] };
+  return { blocks: Object.fromEntries(chapters.map(([k, chapter]) => [k, { chapter }])), inserts };
+}
+
 export function buildRows(sources: Source[], options: BookOptions, ai: AiResults, edits: BookEdits): Row[] {
   // Los capítulos salen de las reglas y los cortes a mano; los ocultos se
   // vuelven a poner en su sitio para poder mostrarlos en la lista.
-  const structural: BookEdits = {
-    blocks: Object.fromEntries(Object.entries(edits.blocks).flatMap(([k, e]) => (e.chapter ? [[k, { chapter: e.chapter }]] : []))),
-    inserts: edits.inserts,
-  };
+  const structural = structuralEdits(structuralKey(edits));
   const original = new Map<string, Source["blocks"][number]>();
   for (const s of sources) s.blocks.forEach((b, i) => original.set(`${s.id}:${i}`, b));
 
@@ -55,6 +69,13 @@ export interface RowFilter {
 export const NO_FILTER: RowFilter = { q: "", author: "", from: "", to: "", photos: false, state: "todos" };
 
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+// El texto de búsqueda de cada fila se normaliza una sola vez, no en cada tecla.
+const folded = new WeakMap<Row, string>();
+function searchText(r: Extract<Row, { kind: "block" }>): string {
+  let t = folded.get(r);
+  if (t === undefined) folded.set(r, (t = fold(`${r.author} ${r.text}`)));
+  return t;
+}
 
 export function isFiltering(f: RowFilter) {
   return !!(f.q.trim() || f.author || f.from || f.to || f.photos || f.state !== "todos");
@@ -68,7 +89,7 @@ export function filterRows(rows: Row[], f: RowFilter, edits: BookEdits): Row[] {
     if (r.kind === "chapter") return false;
     if (r.kind === "insert") return !q && !f.author && !f.from && !f.to && !f.photos && (f.state === "todos" || f.state === "editados");
     const e = edits.blocks[r.key];
-    if (q && !fold(`${r.author} ${r.text}`).includes(q)) return false;
+    if (q && !searchText(r).includes(q)) return false;
     if (f.author && r.author !== f.author) return false;
     const day = r.date?.slice(0, 10) ?? "";
     if (f.from && (!day || day < f.from)) return false;
@@ -97,12 +118,12 @@ export function filterRows(rows: Row[], f: RowFilter, edits: BookEdits): Row[] {
 }
 
 export function editsSummary(edits: BookEdits): { hidden: number; highlighted: number; inserts: number; chapters: number; edited: number } {
-  const all = Object.values(edits.blocks);
-  return {
-    hidden: all.filter((e) => e.hidden).length,
-    highlighted: all.filter((e) => !e.hidden && isHighlighted(e)).length,
-    inserts: edits.inserts.length,
-    chapters: all.filter((e) => e.chapter).length,
-    edited: all.filter((e) => e.runs).length,
-  };
+  const sum = { hidden: 0, highlighted: 0, inserts: edits.inserts.length, chapters: 0, edited: 0 };
+  for (const e of Object.values(edits.blocks)) {
+    if (e.hidden) sum.hidden++;
+    else if (isHighlighted(e)) sum.highlighted++;
+    if (e.chapter) sum.chapters++;
+    if (e.runs) sum.edited++;
+  }
+  return sum;
 }
