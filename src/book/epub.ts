@@ -9,7 +9,7 @@ import { dataPath } from "@/lib/storage";
 import { esc } from "./covers";
 import { hasFormat, type Run } from "./edits";
 import { roman, splitParagraphs } from "./html";
-import { bookPalette, type BookOptions } from "./options";
+import { bookPalette, metaFlags, shownName, type BookOptions } from "./options";
 import { formatDate, type Chapter } from "./structure";
 
 // EPUB 3 refluido para lectores electrónicos. Las fuentes viajan dentro
@@ -243,9 +243,10 @@ nav ol { list-style: none; padding: 0; }
         }
       } else {
         const meta: string[] = [];
-        if (o.content.showName) meta.push(esc(b.author));
-        if (b.date && o.content.showDate) meta.push(formatDate(b.date, o.content.showTime));
-        else if (b.date && o.content.showTime) meta.push(b.date.slice(11, 16));
+        const show = metaFlags(o, b.edit?.meta);
+        if (show.name) meta.push(esc(shownName(o, b.author)));
+        if (b.date && show.date) meta.push(formatDate(b.date, show.time));
+        else if (b.date && show.time) meta.push(b.date.slice(11, 16));
         const srcs = o.content.chatPhotos ? b.media.map(image).filter((x): x is string => !!x) : [];
         const photos = srcs.length ? `<div class="photos">${srcs.map((src) => `<img src="${src}" alt=""/>`).join("")}</div>` : "";
         const design = b.edit?.design ?? "normal";
@@ -266,9 +267,9 @@ nav ol { list-style: none; padding: 0; }
         const inline = place === "antes" ? "" : photos;
         if (o.content.bubbles) {
           const right = !!o.content.rightAuthor && b.author === o.content.rightAuthor;
-          const time = b.date && o.content.showTime ? b.date.slice(11, 16) : "";
+          const time = b.date && show.time ? b.date.slice(11, 16) : "";
           parts.push(
-            `<div class="bubble ${right ? "right" : "left"}">${o.content.showName && !right ? `<p class="b-author">${esc(b.author)}</p>` : ""}${inline}${textP}${time ? `<p class="b-meta">${time}</p>` : ""}</div>`,
+            `<div class="bubble ${right ? "right" : "left"}">${show.name && !right ? `<p class="b-author">${esc(shownName(o, b.author))}</p>` : ""}${inline}${textP}${time ? `<p class="b-meta">${time}</p>` : ""}</div>`,
           );
           continue;
         }

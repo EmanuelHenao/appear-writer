@@ -1,9 +1,10 @@
 import "server-only";
 import type { FontId } from "@/design/fonts";
 import { toVirtual, VIRTUAL_ORIGIN } from "@/lib/render/browser";
-import { renderBookPdf, renderBookPngs } from "@/lib/render/book";
+import { eachBookPng, renderBookPdf, renderBookPngs } from "@/lib/render/book";
 import { fontFaceCss } from "@/lib/render/fontcss";
 import { dataPath, writeBinary } from "@/lib/storage";
+import { ZipWriter } from "@/lib/zipstream";
 import { buildEpub } from "./epub";
 import { bookSegments, buildBookHtml } from "./html";
 import { saveBook, type BookProject } from "./project";
@@ -66,6 +67,37 @@ export async function exportPdf(book: BookProject) {
 
 export async function exportPngs(book: BookProject) {
   return renderBookPngs(await bookHtml(book, "print"), book.options, { scale: 2 });
+}
+
+/**
+ * Los PNG por página en un ZIP que se envía mientras se generan: la memoria
+ * no crece con el número de páginas. Se resuelve con la primera página lista
+ * (los errores anteriores llegan como error normal).
+ */
+export async function exportPngZip(book: BookProject, base: string): Promise<{ stream: ReadableStream<Uint8Array>; pages: number }> {
+  const html = await bookHtml(book, "print");
+  const zip = new ZipWriter();
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  let started: (n: number) => void = () => undefined;
+  let failed: (e: unknown) => void = () => undefined;
+  const first = new Promise<number>((resolve, reject) => {
+    started = resolve;
+    failed = reject;
+  });
+  eachBookPng(html, book.options, async (png, i, total) => {
+    if (i === 0) started(total);
+    for (const part of zip.file(`${base}-${String(i + 1).padStart(4, "0")}.png`, png)) await writer.write(part);
+  }, { scale: 2 })
+    .then(async () => {
+      await writer.write(zip.end());
+      await writer.close();
+    })
+    .catch(async (e) => {
+      failed(e);
+      await writer.abort(e).catch(() => undefined);
+    });
+  return { stream: readable, pages: await first };
 }
 
 export async function exportEpub(book: BookProject) {

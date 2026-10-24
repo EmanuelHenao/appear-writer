@@ -15,9 +15,9 @@ import { StepHead, StudioLayout, type Step } from "@/components/StudioLayout";
 import { Button, Check, Choice, Notice, Section, SuggestDot, TextInput, saveBlob } from "@/components/ui";
 import { useSettings } from "@/components/useSettings";
 import { describeSource, type Source } from "@/book/model";
-import { BOOK_PALETTES, bookPalette, CHAPTER_RULES, chapterRuleOf, COVERS, PAGE_SIZES, suggestedBookOptions, type BookOptions } from "@/book/options";
+import { BOOK_PALETTES, bookPalette, CHAPTER_RULES, chapterRuleOf, COVERS, PAGE_SIZES, shownName, suggestedBookOptions, type BookOptions } from "@/book/options";
 import { emptyEdits, type BookEdits } from "@/book/edits";
-import { buildRows, editsSummary } from "@/book/rows";
+import { buildRows, editsSummary, structuralEdits, structuralKey } from "@/book/rows";
 import { suggestEdits } from "@/book/suggest";
 import type { AiResults } from "@/book/structure";
 import { BOOK_FONT_CHOICES, FONTS, fontStack } from "@/design/fonts";
@@ -70,6 +70,8 @@ export function BookStudio() {
   // Fuentes cargadas en la vista previa: si el texto con formato pide otra, hay que recargarla entera.
   const loadedFonts = useRef("");
   const patching = useRef<{ running: boolean; again: boolean }>({ running: false, again: false });
+  // Huellas de las secciones que ya tiene la vista previa: al editar solo viaja el HTML de las que cambian.
+  const frameHashes = useRef<Record<string, string>>({});
   const selectedRef = useRef<string | null>(null);
   const editsRef = useRef<BookEdits>(emptyEdits());
   const history = useRef<{ edits: BookEdits; tag?: string; at: number }[]>([]);
@@ -107,6 +109,7 @@ export function BookStudio() {
       const win = frame.current.contentWindow;
       if (e.data?.type === "book-ready") {
         setPages(e.data.pages);
+        frameHashes.current = e.data.hashes ?? {};
         loadedFonts.current = runFonts(editsRef.current);
         // La vista elegida y el bloque elegido se mantienen al recargar la vista previa.
         const w = wanted.current;
@@ -132,7 +135,10 @@ export function BookStudio() {
       }
       // Si aún no está (una página recién añadida), aparece en cuanto se actualice la vista previa.
       if (e.data?.type === "book-focus" && e.data.key === selectedRef.current && e.data.found) setPickPage(e.data.page || null);
-      if (e.data?.type === "book-patched") setPages(e.data.pages);
+      if (e.data?.type === "book-patched") {
+        setPages(e.data.pages);
+        frameHashes.current = e.data.hashes ?? {};
+      }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
@@ -148,8 +154,17 @@ export function BookStudio() {
   const hasChats = !!book?.sources.some((s) => s.kind === "whatsapp");
   const hasImages = !!book?.sources.some((s) => (s.meta.images ?? 0) > 0);
   const edits = book?.edits ?? emptyEdits();
-  const rows = useMemo(() => (book ? buildRows(book.sources, book.options, book.ai, book.edits ?? emptyEdits()) : []), [book]);
+  // La lista solo se rehace si cambian las fuentes, las opciones o la estructura (capítulos a mano, páginas añadidas).
+  const structure = useMemo(() => structuralKey(book?.edits ?? emptyEdits()), [book?.edits]);
+  const sources = book?.sources;
+  const bookOptions = book?.options;
+  const bookAi = book?.ai;
+  const rows = useMemo(
+    () => (sources && bookOptions && bookAi ? buildRows(sources, bookOptions, bookAi, structuralEdits(structure)) : []),
+    [sources, bookOptions, bookAi, structure],
+  );
   const items = useMemo(() => rows.filter((r) => r.kind !== "chapter"), [rows]);
+  const itemIndex = useMemo(() => new Map(items.map((r, i) => [r.key, i])), [items]);
   const suggestions = useMemo(() => (book ? suggestEdits(book.sources, book.edits ?? emptyEdits()) : []), [book]);
   const participants = useMemo(() => Array.from(new Set(book?.sources.flatMap((s) => s.meta.participants ?? []) ?? [])), [book]);
   const palette = useMemo(() => {
@@ -230,7 +245,11 @@ export function BookStudio() {
     try {
       do {
         q.again = false;
-        const res = await fetch(`/api/books/${id}/preview?formato=secciones`);
+        const res = await fetch(`/api/books/${id}/preview?formato=secciones`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ have: frameHashes.current }),
+        });
         if (!res.ok) break;
         const { segments } = await res.json();
         frame.current?.contentWindow?.postMessage({ type: "book-control", patch: segments }, "*");
@@ -439,7 +458,7 @@ export function BookStudio() {
     { id: "paso-2", label: "Contenido", done: touched, current: hasSources && panel !== "lista", onGo: () => contentFolded && foldContent(false) },
     { id: "paso-3", label: "Opciones", current: hasSources && panel === "lista" },
   ];
-  const index = selected ? items.findIndex((r) => r.key === selected) : -1;
+  const index = selected ? (itemIndex.get(selected) ?? -1) : -1;
   const blockOf = (key: string) => {
     const [src, i] = [key.slice(0, key.lastIndexOf(":")), Number(key.slice(key.lastIndexOf(":") + 1))];
     return book?.sources.find((x) => x.id === src)?.blocks[i] ?? null;
@@ -608,6 +627,7 @@ export function BookStudio() {
             rows={rows}
             edits={edits}
             participants={participants}
+            nameOf={(a: string) => shownName(book.options, a)}
             selected={selected}
             suggestions={{
               hide: suggestions.filter((x) => x.kind === "ocultar" && x.suggested).reduce((a, x) => a + x.keys.length, 0),
@@ -748,9 +768,9 @@ export function BookStudio() {
                             className="h-9 rounded-lg border border-line bg-ink px-2"
                           >
                             <option value="">Nadie</option>
-                            {Array.from(new Set(book.sources.flatMap((s) => s.meta.participants ?? []))).map((p) => (
+                            {participants.map((p) => (
                               <option key={p} value={p}>
-                                {p}
+                                {shownName(o, p)}
                               </option>
                             ))}
                           </select>
@@ -791,6 +811,31 @@ export function BookStudio() {
                         </label>
                       ) : null}
                     </fieldset>
+                    {participants.length ? (
+                      <fieldset className="col-span-2 flex flex-col gap-2">
+                        <legend className="mb-1 text-sm text-muted">Personas</legend>
+                        <p className="-mt-1 text-xs text-muted">Cómo se llama cada una en el libro. Vacío deja el nombre del chat ●.</p>
+                        {participants.map((p) => (
+                          <label key={p} className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-center gap-2 text-sm">
+                            <span className="truncate text-muted" title={p}>
+                              {p}
+                            </span>
+                            <TextInput
+                              value={o.content.names[p] ?? ""}
+                              maxLength={80}
+                              placeholder={p}
+                              aria-label={`Nombre en el libro para ${p}`}
+                              onChange={(e) => {
+                                const names = { ...o.content.names };
+                                if (e.target.value.trim()) names[p] = e.target.value;
+                                else delete names[p];
+                                upContent({ names });
+                              }}
+                            />
+                          </label>
+                        ))}
+                      </fieldset>
+                    ) : null}
                     <Check id="c-name" checked={o.content.showName} onChange={(v) => upContent({ showName: v })} suggested={S(true, sug?.content.showName)}>
                       Nombre de quien escribe
                     </Check>
@@ -924,6 +969,8 @@ export function BookStudio() {
         palette={palette}
         baseFont={fontStack(book.options.font)}
         page={pickPage}
+        onePerPage={book.options.content.onePerPage && !book.options.content.bubbles}
+        options={book.options}
         position={{ index: Math.max(0, index), total: items.length }}
         onPrev={() => index > 0 && openItem(items[index - 1].key)}
         onNext={() => index >= 0 && index < items.length - 1 && openItem(items[index + 1].key)}
@@ -1048,6 +1095,7 @@ const BOOK_SHORTCUTS: ShortcutGroup[] = [
       { keys: ["←", "→"], label: "Mensaje anterior o siguiente" },
       { keys: ["H"], label: "Ocultar o mostrar el mensaje" },
       { keys: ["D"], label: "Destacar como cita" },
+      { keys: ["J"], label: "Juntar el siguiente mensaje en la misma página (con «Uno por página»)" },
       { keys: ["Esc"], label: "Volver a la lista" },
       { keys: ["Ctrl", "Z"], label: "Deshacer la última decisión" },
       { keys: ["Mayús", "Clic"], label: "Marcar un tramo de la lista" },

@@ -1,5 +1,6 @@
 import "server-only";
 import type { PhotoRef } from "@/design/spec";
+import { stat } from "node:fs/promises";
 import { dataPath, isSafeId, listDirs, newId, readJson, removeDir, writeJson } from "@/lib/storage";
 import { emptyEdits, normalizeEdits, type BookEdits } from "./edits";
 import type { Source } from "./model";
@@ -41,8 +42,33 @@ export async function createBook(): Promise<BookProject> {
   return book;
 }
 
+// El último estado de cada libro queda en memoria (un chat puede pesar
+// decenas de MB): leerlo y parsearlo en cada petición sería lo más caro de
+// cada edición. Se invalida por la fecha de modificación del archivo.
+const cache = new Map<string, { mtime: number; book: BookProject }>();
+
+/**
+ * Copia para quien la pida: lo pequeño se duplica y las fuentes se
+ * comparten (nunca se modifican en su sitio; se reemplazan).
+ */
+function copyOf(b: BookProject): BookProject {
+  return { ...b, sources: [...b.sources], options: structuredClone(b.options), ai: structuredClone(b.ai), stock: structuredClone(b.stock), edits: structuredClone(b.edits) };
+}
+
+async function mtimeOf(id: string): Promise<number | null> {
+  try {
+    return (await stat(file(id))).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
 export async function getBook(id: string): Promise<BookProject | null> {
   if (!isSafeId(id)) return null;
+  const mtime = await mtimeOf(id);
+  if (mtime === null) return null;
+  const hit = cache.get(id);
+  if (hit && hit.mtime === mtime) return copyOf(hit.book);
   const b = await readJson<BookProject | null>(file(id), null);
   if (!b) return null;
   const parsed = BookOptionsSchema.safeParse(b.options);
@@ -50,17 +76,20 @@ export async function getBook(id: string): Promise<BookProject | null> {
   if (parsed.success) b.options = parsed.data;
   else b.options = { ...suggestedBookOptions(b.sources), cover: b.options?.cover ?? suggestedBookOptions(b.sources).cover };
   b.edits = normalizeEdits(b.edits);
-  return b;
+  cache.set(id, { mtime, book: b });
+  return copyOf(b);
 }
 
 export async function saveBook(b: BookProject): Promise<void> {
   b.updatedAt = new Date().toISOString();
-  await writeJson(file(b.id), b);
+  await writeJson(file(b.id), b, false);
+  const mtime = await mtimeOf(b.id);
+  if (mtime !== null) cache.set(b.id, { mtime, book: copyOf(b) });
 }
 
 export async function listBooks() {
   const ids = (await listDirs(dataPath("books"))).filter(isSafeId);
-  const books = await Promise.all(ids.map((id) => readJson<BookProject | null>(file(id), null)));
+  const books = await Promise.all(ids.map((id) => getBook(id)));
   return books
     .filter((b): b is BookProject => !!b && b.sources.length > 0)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -75,6 +104,7 @@ export async function listBooks() {
 
 export async function deleteBook(id: string) {
   if (!isSafeId(id)) return false;
+  cache.delete(id);
   await removeDir(dataPath("books", id));
   return true;
 }

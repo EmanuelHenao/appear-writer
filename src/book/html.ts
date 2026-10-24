@@ -1,7 +1,7 @@
 import { fontStack, type FontId } from "@/design/fonts";
 import type { PhotoRef } from "@/design/spec";
 import { coverHtml, esc } from "./covers";
-import { BLEED_MM, bookPalette, PAGE_SIZES, type BookOptions } from "./options";
+import { BLEED_MM, bookPalette, metaFlags, PAGE_SIZES, shownName, type BookOptions } from "./options";
 import { hasFormat, type Run } from "./edits";
 import { PAGINATE_JS } from "./paginate.js";
 import { formatDate, formatLongDate, type Chapter, type KeyedBlock } from "./structure";
@@ -56,9 +56,10 @@ const BODY_PT = { pequena: 10, normal: 11, grande: 12.5 } as const;
 
 function metaLine(b: Extract<KeyedBlock, { type: "message" }>, o: BookOptions): string {
   const parts: string[] = [];
-  if (o.content.showName && b.author) parts.push(b.author);
-  if (b.date && o.content.showDate) parts.push(formatDate(b.date, o.content.showTime));
-  else if (b.date && o.content.showTime) parts.push(b.date.slice(11, 16));
+  const show = metaFlags(o, b.edit?.meta);
+  if (show.name && b.author) parts.push(shownName(o, b.author));
+  if (b.date && show.date) parts.push(formatDate(b.date, show.time));
+  else if (b.date && show.time) parts.push(b.date.slice(11, 16));
   return parts.map(esc).join(" · ");
 }
 
@@ -145,8 +146,9 @@ function messageHtml(b: MsgBlock, input: BookDocInput): string {
   const images = place === "antes" ? "" : polaroids(urls);
   if (o.content.bubbles) {
     const right = !!o.content.rightAuthor && b.author === o.content.rightAuthor;
-    const time = b.date && (o.content.showTime || o.content.showDate) ? esc(o.content.showTime ? b.date.slice(11, 16) : "") : "";
-    const who = o.content.showName && !right ? `<div class="b-author">${esc(b.author)}</div>` : "";
+    const show = metaFlags(o, e?.meta);
+    const time = b.date && show.time ? esc(b.date.slice(11, 16)) : "";
+    const who = show.name && !right ? `<div class="b-author">${esc(shownName(o, b.author))}</div>` : "";
     return `${before}<div class="bubble ${right ? "right" : "left"}"${k}>${who}${images}${text("b-text")}${time ? `<span class="b-meta" data-meta-end>${time}</span>` : ""}</div>`;
   }
   if (o.content.onePerPage) {
@@ -154,6 +156,21 @@ function messageHtml(b: MsgBlock, input: BookDocInput): string {
     return `${before}<div class="msg-own" data-mode="own" data-page-class="msg-page" data-long-class="msg msg-long"${k}>${images}${text("msg-text")}${metaHtml}</div>`;
   }
   return `${before}<div class="msg"${k}>${images}${text("msg-text")}${metaHtml}</div>`;
+}
+
+/** Un mensaje que puede compartir página con los vecinos: «Uno por página», sin diseño especial ni fotos aparte. */
+function joinable(b: KeyedBlock, o: BookOptions): b is MsgBlock {
+  return b.type === "message" && o.content.onePerPage && !o.content.bubbles && (!b.edit?.design || b.edit.design === "normal") && (b.edit?.photos?.place ?? "junto") === "junto";
+}
+
+/** Varios mensajes juntados en una página. Si no caben, el paginador los pasa a texto corrido. */
+function joinedHtml(list: MsgBlock[], input: BookDocInput): string {
+  const items = list.map((b) => {
+    const meta = metaLine(b, input.options);
+    const text = b.text ? `<p class="msg-text" data-split${alignAttr(b)}>${textHtml(b.text, b.edit?.runs)}</p>` : "";
+    return `<div class="msg-item"${keyAttr(b)}>${polaroids(photoUrls(b, input))}${text}${meta ? `<p class="meta" data-meta-end>${meta}</p>` : ""}</div>`;
+  });
+  return `<div class="msg-own msg-joined" data-mode="own" data-page-class="msg-page" data-joined="1">${items.join("")}</div>`;
 }
 
 /** Parte los tramos en párrafos por las líneas en blanco, sin perder el formato. */
@@ -297,7 +314,19 @@ export function bookSegments(input: BookDocInput): BookSegment[] {
     items.push(chapterOpener(c, i, chapters.length, input, own));
     let first = !own;
     let lastDay = "";
+    // Mensajes que el usuario juntó en una misma página.
+    let joined: MsgBlock[] = [];
+    const flush = () => {
+      if (joined.length) items.push(joined.length === 1 ? blockHtml(joined[0], input, false) : joinedHtml(joined, input));
+      joined = [];
+    };
     for (const b of c.blocks) {
+      if (joined.length && !joinable(b, o)) flush();
+      if (joinable(b, o) && (joined.length || b.edit?.join)) {
+        joined.push(b);
+        if (!b.edit?.join) flush();
+        continue;
+      }
       // En modo burbujas, un separador cada vez que cambia el día.
       if (o.content.bubbles && b.type === "message" && b.date && o.content.showDate) {
         const day = b.date.slice(0, 10);
@@ -307,6 +336,7 @@ export function bookSegments(input: BookDocInput): BookSegment[] {
       items.push(blockHtml(b, input, first));
       if (b.type === "paragraph") first = false;
     }
+    flush();
   });
   return segments.map((sg) => {
     const html = sg.items.join("\n");
@@ -331,7 +361,8 @@ ${input.fontCss}
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body { font-family: ${serif}; color: var(--ink); font-size: ${pt}pt; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-#flow { position: absolute; left: -99999px; top: 0; width: var(--pw); }
+/* Lo que espera turno no se maqueta: así cada medida solo mira la página que se está llenando. */
+#flow { display: none; }
 .page { width: var(--pw); height: var(--ph); position: relative; overflow: hidden; background: var(--paper); break-after: page; page-break-after: always; }
 .page .inner { position: absolute; inset: 0; padding: ${m.top}mm ${m.outer}mm ${m.bottom}mm ${m.inner}mm; display: flex; flex-direction: column; }
 .page.verso .inner { padding-left: ${m.outer}mm; padding-right: ${m.inner}mm; }
@@ -386,6 +417,9 @@ body { font-family: ${serif}; color: var(--ink); font-size: ${pt}pt; line-height
 .msg-own { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5mm; padding: 0 3mm; }
 .msg-own .msg-text { font-size: 1.6em; line-height: 1.4; text-wrap: pretty; }
 .msg-own .meta { margin: 0; }
+.msg-joined { gap: 8mm; }
+.msg-item { display: flex; flex-direction: column; align-items: center; gap: 2.5mm; }
+.msg-joined .msg-text { font-size: 1.3em; }
 .msg-photos { display: flex; flex-wrap: wrap; justify-content: center; gap: 4mm; }
 .polaroid { margin: 0; background: #fff; padding: 2.4mm 2.4mm 7mm; box-shadow: 0 1mm 3mm rgba(60,45,20,0.18); transform: rotate(-1.5deg); }
 .polaroid:nth-child(2n) { transform: rotate(1.5deg); }
@@ -445,7 +479,6 @@ body { font-family: ${serif}; color: var(--ink); font-size: ${pt}pt; line-height
 body.previewing [data-key] { cursor: pointer; }
 body.previewing [data-key]:hover { outline: 0.3mm dashed rgba(124, 104, 230, 0.55); outline-offset: 1.5mm; }
 body.previewing .picked { outline: 0.5mm solid #8f7cf0 !important; outline-offset: 1.5mm; box-shadow: 0 0 0 2.2mm rgba(182, 166, 255, 0.28); border-radius: 0.6mm; }
-@media screen { .page.off { display: none; } }
 .preview-note { grid-column: 1 / -1; text-align: center; color: #cfc9da; font-family: system-ui, sans-serif; font-size: 13px; }
 
 @media screen {

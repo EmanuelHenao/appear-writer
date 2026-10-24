@@ -2,11 +2,12 @@ import { execFileSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
+import { PDFDocument } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Source } from "@/book/model";
 import { suggestedBookOptions } from "@/book/options";
 import type { BookProject } from "@/book/project";
-import { bookHtml, exportEpub, exportPdf, exportPngs, previewSegments } from "@/book/service";
+import { bookHtml, exportEpub, exportPdf, exportPngZip, exportPngs, previewSegments } from "@/book/service";
 import { parsePlainText } from "@/import/text";
 import { parseWhatsApp } from "@/import/whatsapp";
 import { importFile } from "@/import";
@@ -70,12 +71,60 @@ describe("render del libro", () => {
 
   it("un chat: un mensaje por página, capítulos por mes y mensajes largos partidos", async () => {
     const book = project([chatSource()]);
+    book.options.content.onePerPage = true;
     const pdf = await exportPdf(book);
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     // portada + portadilla + índice + 2 aperturas + 12 mensajes (+ páginas extra del mensaje largo)
     expect(book.lastPages).toBeGreaterThanOrEqual(17);
     expect(pdfPages(pdf)).toBe(book.lastPages);
     if (OUT) await writeFile(path.join(OUT, "libro-chat.pdf"), pdf);
+  });
+
+  it("uno por página: los mensajes juntados comparten página y, si no caben, pasan a texto corrido", async () => {
+    const book = project([chatSource()]);
+    book.options.content.onePerPage = true;
+    const base = await exportPdf(book).then(() => book.lastPages!);
+    // Los tres primeros mensajes en una sola página.
+    book.edits = { blocks: { "chat1:0": { join: true }, "chat1:1": { join: true } }, inserts: [] };
+    const html = await bookHtml(book, "print");
+    expect(html).toContain('data-joined="1"');
+    const pdf = await exportPdf(book);
+    expect(book.lastPages).toBe(base - 2);
+    if (OUT) await writeFile(path.join(OUT, "libro-juntados.pdf"), pdf);
+    // Con el mensaje larguísimo (el 6.º) el grupo no cabe: va como texto corrido, sin perder nada.
+    book.edits = { blocks: { "chat1:3": { join: true }, "chat1:4": { join: true } }, inserts: [] };
+    const { page, context } = await openDoc({ html: await bookHtml(book, "print"), width: 600, height: 800, scale: 1, media: "print", readySelector: "body[data-ready]" });
+    const keys = await page.evaluate(() => ["chat1:3", "chat1:4", "chat1:5"].map((k) => document.querySelectorAll(`.msg.msg-long[data-key="${k}"]`).length));
+    expect(keys.every((n) => n >= 1)).toBe(true);
+    await context.close();
+  });
+
+  it("un libro de más de 250 páginas sale por tandas y en orden", async () => {
+    const lines = Array.from({ length: 320 }, (_, i) => `${(i % 28) + 1}/5/24, 10:${String(i % 60).padStart(2, "0")} - Ana: Mensaje ${i + 1}`).join("\n");
+    const chat = parseWhatsApp(lines);
+    const book = project([{ id: "big", name: "Ana", kind: "whatsapp", blocks: chat.blocks, meta: { messages: chat.blocks.length } }]);
+    book.options.content.onePerPage = true;
+    book.options.content.chapterRule = "ninguno";
+    const pdf = await exportPdf(book);
+    expect(book.lastPages).toBeGreaterThan(320);
+    const doc = await PDFDocument.load(pdf);
+    expect(doc.getPageCount()).toBe(book.lastPages);
+  });
+
+  it("las personas se renombran y cada mensaje puede llevar su propio nombre, fecha y hora", async () => {
+    const book = project([chatSource()]);
+    book.options.content = { ...book.options.content, names: { Ana: "Anita" }, showName: true, showDate: true, showTime: false };
+    // El primer mensaje (de Ana) sin nombre y con hora; el segundo (de Emanuel) sin fecha.
+    book.edits = { blocks: { "chat1:0": { meta: { name: false, time: true } }, "chat1:1": { meta: { date: false } } }, inserts: [] };
+    const html = await bookHtml(book, "print");
+    const metaOf = (key: string) => html.match(new RegExp(`data-key="${key}"[^]*?<p class="meta" data-meta-end>([^<]*)</p>`))?.[1];
+    expect(metaOf("chat1:0")).toMatch(/^1 mar 2024 · \d\d:\d\d$/);
+    expect(metaOf("chat1:1")).toBe("Emanuel");
+    expect(metaOf("chat1:2")).toBe("Anita · 3 mar 2024");
+    expect(html).not.toMatch(/>Ana ·/);
+    const epub = await JSZip.loadAsync(await exportEpub(book));
+    const cap = await epub.file(/cap-\d+\.xhtml$/)[0].async("string");
+    expect(cap).toContain("Anita · 3 mar 2024");
   });
 
   it("un texto en prosa reparte párrafos largos en varias páginas", async () => {
@@ -88,6 +137,7 @@ describe("render del libro", () => {
 
   it("los PNG por página tienen el tamaño A5 con sangrado a 2x", async () => {
     const book = project([chatSource()]);
+    book.options.content.onePerPage = true;
     book.options.cover.template = "lino";
     const pngs = await exportPngs(book);
     expect(pngs.length).toBeGreaterThan(10);
@@ -97,6 +147,17 @@ describe("render del libro", () => {
     expect(w).toBe(Math.ceil((154 * 96) / 25.4) * 2);
     expect(h).toBe(Math.ceil((216 * 96) / 25.4) * 2);
     if (OUT) for (const [i, png] of pngs.slice(0, 8).entries()) await writeFile(path.join(OUT, `pagina-${i + 1}.png`), png);
+  });
+
+  it("el ZIP de PNG se envía mientras se genera y trae una imagen por página", async () => {
+    const book = project([chatSource()]);
+    const { stream, pages } = await exportPngZip(book, "libro");
+    const zip = await JSZip.loadAsync(Buffer.from(await new Response(stream).arrayBuffer()));
+    const names = Object.keys(zip.files);
+    expect(names).toHaveLength(pages);
+    expect(names[0]).toBe("libro-0001.png");
+    const png = await zip.file(names[0])!.async("nodebuffer");
+    expect(png.subarray(1, 4).toString()).toBe("PNG");
   });
 
   it("el EPUB tiene la estructura mínima válida (y pasa epubcheck si está disponible)", async () => {
@@ -240,6 +301,7 @@ describe("render del libro", () => {
   it("v7: al editar, la vista previa repagina solo las secciones que cambian y queda igual que recargada", async () => {
     const src = chatSource();
     const book = project([src]);
+    book.options.content.onePerPage = true;
     const open = async (html: string) => openDoc({ html, width: 1200, height: 900, scale: 1, media: "screen", readySelector: "body[data-ready]" });
     const { page, context } = await open(await bookHtml(book, "preview", 6));
     const before = await page.evaluate(() => (window as unknown as { __BOOK_READY__: { pages: number } }).__BOOK_READY__.pages);
@@ -256,12 +318,13 @@ describe("render del libro", () => {
         new Promise<{ pages: number; changed: number; folios: string[]; toc: string[] }>((resolve) => {
           window.addEventListener("message", (e) => {
             if (e.data?.type !== "book-patched") return;
-            const pages = Array.from(document.querySelectorAll("#book > .page"));
+            // En la vista previa el documento solo tiene la ventana de páginas; el libro entero está en __bookPages.
+            const pages = (window as unknown as { __bookPages: () => HTMLElement[] }).__bookPages();
             resolve({
               pages: e.data.pages,
               changed: e.data.changed,
-              folios: pages.map((p) => (p as HTMLElement).dataset.n ?? ""),
-              toc: Array.from(document.querySelectorAll("#book .toc-entry .pn")).map((x) => x.textContent ?? ""),
+              folios: pages.map((p) => String((p as unknown as { __n: number }).__n)),
+              toc: pages.flatMap((p) => Array.from(p.querySelectorAll(".toc-entry .pn")).map((x) => x.textContent ?? "")),
             });
           });
           window.postMessage({ type: "book-control", patch: segs }, "*");
@@ -276,7 +339,7 @@ describe("render del libro", () => {
     const fresh = await open(await bookHtml(book, "preview", 6));
     const ref = await fresh.page.evaluate(() => ({
       pages: (window as unknown as { __BOOK_READY__: { pages: number } }).__BOOK_READY__.pages,
-      toc: Array.from(document.querySelectorAll("#book .toc-entry .pn")).map((x) => x.textContent ?? ""),
+      toc: (window as unknown as { __bookPages: () => HTMLElement[] }).__bookPages().flatMap((p) => Array.from(p.querySelectorAll(".toc-entry .pn")).map((x) => x.textContent ?? "")),
     }));
     await fresh.context.close();
     expect(patched.pages).toBe(ref.pages);
