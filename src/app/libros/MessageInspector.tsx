@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { Bookmark, ChevronLeft, ChevronRight, Close, Eye, EyeOff, PagePlus, Star } from "@/components/icons";
 import { OwnPhotos } from "@/components/OwnPhotos";
-import { Button, Choice, TextInput } from "@/components/ui";
+import { Button, Check, Choice, TextInput } from "@/components/ui";
 import { hasFormat, plainToRuns, runsToPlain, setBlockEdit, type BlockDesign, type BookEdits, type Insert, type Run } from "@/book/edits";
 import type { Block } from "@/book/model";
+import { metaFlags, shownName, type BookOptions } from "@/book/options";
 import { formatDate } from "@/book/structure";
 import { RichText, type Palette } from "./RichText";
 
@@ -34,6 +35,10 @@ export interface InspectorProps {
   palette: Palette;
   baseFont: string;
   page: number | null;
+  /** El libro está en «Uno por página»: se pueden juntar mensajes en una página. */
+  onePerPage: boolean;
+  /** Opciones del libro: nombres de las personas y qué datos lleva cada mensaje por defecto. */
+  options: BookOptions;
   position: { index: number; total: number };
   onPrev: () => void;
   onNext: () => void;
@@ -56,12 +61,13 @@ export function MessageInspector(p: InspectorProps) {
       else if (!ins && e.key.toLowerCase() === "h") onChange(setBlockEdit(edits, itemKey, { hidden: edit?.hidden ? undefined : true }));
       else if (!ins && e.key.toLowerCase() === "d" && p.block?.type === "message")
         onChange(setBlockEdit(edits, itemKey, { design: edit?.design === "cita" ? undefined : "cita", hidden: undefined }));
+      else if (!ins && e.key.toLowerCase() === "j" && p.onePerPage && p.block?.type === "message") onChange(setBlockEdit(edits, itemKey, { join: edit?.join ? undefined : true }));
       else return;
       e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [edits, edit, ins, itemKey, onChange, onClose, onNext, onPrev, p.block]);
+  }, [edits, edit, ins, itemKey, onChange, onClose, onNext, onPrev, p.block, p.onePerPage]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -85,7 +91,7 @@ export function MessageInspector(p: InspectorProps) {
   );
 }
 
-function BlockEditor({ bookId, itemKey, block, edits, onChange, palette, baseFont, page, onOpen }: InspectorProps & { block: Block }) {
+function BlockEditor({ bookId, itemKey, block, edits, onChange, palette, baseFont, page, onePerPage, options, onOpen }: InspectorProps & { block: Block }) {
   const e = edits.blocks[itemKey];
   const set = (patch: Parameters<typeof setBlockEdit>[2], coalesce?: string) => onChange(setBlockEdit(edits, itemKey, patch), coalesce);
   const isMsg = block.type === "message";
@@ -113,7 +119,7 @@ function BlockEditor({ bookId, itemKey, block, edits, onChange, palette, baseFon
     <>
       <div>
         <div className="text-xs text-muted">
-          {[isMsg ? block.author : "Párrafo", isMsg && block.date ? formatDate(block.date, true) : "", page ? `página ${page}` : ""].filter(Boolean).join(" · ")}
+          {[isMsg ? shownName(options, block.author) : "Párrafo", isMsg && block.date ? formatDate(block.date, true) : "", page ? `página ${page}` : ""].filter(Boolean).join(" · ")}
         </div>
         <h2 className="font-display text-xl font-bold">{isMsg ? "Mensaje" : "Párrafo"}</h2>
       </div>
@@ -196,8 +202,22 @@ function BlockEditor({ bookId, itemKey, block, edits, onChange, palette, baseFon
               </Choice>
             </div>
           ) : null}
+          {onePerPage && design === "normal" ? (
+            <Check
+              id={`join-${itemKey}`}
+              checked={!!e?.join}
+              onChange={(v) => set({ join: v || undefined })}
+              hint="Repítelo en los siguientes para poner varios en la misma página. Si no caben, pasan a texto corrido."
+            >
+              <span className="text-[13px]">
+                Juntar el siguiente mensaje en esta página <kbd className="ml-1 font-mono text-[10px] text-muted">J</kbd>
+              </span>
+            </Check>
+          ) : null}
         </Card>
       ) : null}
+
+      {isMsg ? <MetaCard options={options} meta={e?.meta} hasDate={!!block.date} onChange={(meta) => set({ meta })} /> : null}
 
       {media.length ? (
         <Card title="Fotos" summary={`${media.length - hiddenPhotos.size} de ${media.length}${design === "normal" ? ` · ${PLACE_LABEL[e?.photos?.place ?? "junto"]}` : ""}`}>
@@ -281,6 +301,39 @@ function BlockEditor({ bookId, itemKey, block, edits, onChange, palette, baseFon
 }
 
 const PLACE_LABEL = { junto: "Junto", antes: "Página antes", ambas: "Ambas" } as const;
+
+type Meta = NonNullable<BookEdits["blocks"][string]["meta"]>;
+
+/** Nombre, fecha y hora de este mensaje. Parten de lo elegido para el libro (●); solo se guarda lo que difiere. */
+function MetaCard({ options, meta, hasDate, onChange }: { options: BookOptions; meta: Meta | undefined; hasDate: boolean; onChange: (meta: Meta | undefined) => void }) {
+  const book = metaFlags(options);
+  const now = metaFlags(options, meta);
+  const custom = (["name", "date", "time"] as const).some((k) => meta?.[k] !== undefined);
+  function toggle(k: keyof Meta, v: boolean) {
+    const next: Meta = { ...meta, [k]: v === book[k] ? undefined : v };
+    onChange(next.name === undefined && next.date === undefined && next.time === undefined ? undefined : next);
+  }
+  const rows: { k: keyof Meta; label: string; disabled?: boolean }[] = [
+    { k: "name", label: "Nombre de quien escribe" },
+    { k: "date", label: "Fecha", disabled: !hasDate },
+    { k: "time", label: "Hora", disabled: !hasDate },
+  ];
+  return (
+    <Card
+      title="Datos del mensaje"
+      summary={custom ? "a medida" : "como el libro ●"}
+      action={custom ? <button type="button" onClick={() => onChange(undefined)} className="text-xs text-accent hover:underline">Como el libro</button> : undefined}
+    >
+      <div className="flex flex-col gap-2 text-[13px]">
+        {rows.map((r) => (
+          <Check key={r.k} id={`meta-${r.k}`} checked={now[r.k]} disabled={r.disabled} onChange={(v) => toggle(r.k, v)} suggested={now[r.k] === book[r.k]}>
+            {r.label}
+          </Check>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 function InsertEditor({ edits, onChange, palette, baseFont, onClose, ins }: InspectorProps & { ins: Insert }) {
   const set = (patch: Partial<Insert>, coalesce?: string) => onChange({ ...edits, inserts: edits.inserts.map((x) => (x.id === ins.id ? { ...x, ...patch } : x)) }, coalesce);

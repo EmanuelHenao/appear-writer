@@ -38,10 +38,11 @@ export async function readJson<T>(file: string, fallback: T): Promise<T> {
   }
 }
 
-export async function writeJson(file: string, value: unknown): Promise<void> {
+/** `pretty: false` para archivos grandes que solo lee la app (más rápidos y pequeños). */
+export async function writeJson(file: string, value: unknown, pretty = true): Promise<void> {
   await ensureDir(path.dirname(file));
   const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(value, null, 2));
+  await writeFile(tmp, pretty ? JSON.stringify(value, null, 2) : JSON.stringify(value));
   const { rename } = await import("node:fs/promises");
   await rename(tmp, file);
 }

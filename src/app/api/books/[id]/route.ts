@@ -44,15 +44,17 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/books/[id]">) 
     if (p.order) {
       const byId = new Map(book.sources.map((s) => [s.id, s]));
       const ordered = p.order.map((i) => byId.get(i)).filter((s): s is NonNullable<typeof s> => !!s);
-      book.sources = [...ordered, ...book.sources.filter((s) => !p.order!.includes(s.id))];
+      const listed = new Set(p.order);
+      book.sources = [...ordered, ...book.sources.filter((s) => !listed.has(s.id))];
     }
     if (p.removeSource) {
       book.sources = book.sources.filter((s) => s.id !== p.removeSource);
       refreshSuggestions(book);
     }
     if (p.renameSource) {
-      const s = book.sources.find((x) => x.id === p.renameSource!.id);
-      if (s) s.name = p.renameSource.name;
+      // Se reemplaza la fuente en vez de cambiarla en su sitio (las fuentes se comparten con la caché).
+      const { id: sid, name } = p.renameSource;
+      book.sources = book.sources.map((x) => (x.id === sid ? { ...x, name } : x));
     }
     if (p.stock) book.stock = p.stock;
     if (p.edits) book.edits = p.edits;
@@ -62,6 +64,8 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/books/[id]">) 
     }
     if (p.clearAi === "spelling" || p.clearAi === "all") delete book.ai.corrections;
     await saveBook(book);
+    // Guardar solo las ediciones no devuelve el libro entero (puede pesar decenas de MB).
+    if (Object.keys(p).length === 1 && p.edits) return Response.json({ ok: true });
     return Response.json(book);
   } catch (e) {
     return errorResponse(e);

@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Search } from "@/components/icons";
 import { Button } from "@/components/ui";
-import { isHighlighted, setBlockEdit, type BookEdits } from "@/book/edits";
+import { isHighlighted, setBlockEdits, type BlockEdit, type BookEdits } from "@/book/edits";
 import { editsSummary, filterRows, isFiltering, NO_FILTER, type Row, type RowFilter, type StateFilter } from "@/book/rows";
 import { formatDate } from "@/book/structure";
 
@@ -26,6 +26,7 @@ export function ContentStep({
   rows,
   edits,
   participants,
+  nameOf,
   selected,
   suggestions,
   onOpen,
@@ -35,6 +36,8 @@ export function ContentStep({
   rows: Row[];
   edits: BookEdits;
   participants: string[];
+  /** Nombre con que aparece cada persona en el libro (renombrada o no). */
+  nameOf: (author: string) => string;
   selected: string | null;
   suggestions: { hide: number; highlight: number };
   onOpen: (key: string) => void;
@@ -63,14 +66,20 @@ export function ContentStep({
   const total = tops[tops.length - 1];
   const height = Math.min(LIST_H, Math.max(total, 120));
   // Solo se pintan las filas visibles: los chats tienen miles de mensajes.
-  let first = 0;
-  while (first < shown.length && tops[first + 1] < scroll) first++;
+  // La primera se busca por bisección sobre las alturas acumuladas.
+  let lo = 0;
+  let hi = shown.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (tops[mid + 1] < scroll) lo = mid + 1;
+    else hi = mid;
+  }
+  const first = lo;
   let last = first;
   while (last < shown.length && tops[last] < scroll + height + 200) last++;
 
-  const totalBlocks = rows.filter((r) => r.kind === "block").length;
-  const checkedVisible = blocks.filter((r) => checked.has(r.key));
-  const allChecked = blocks.length > 0 && checkedVisible.length === blocks.length;
+  const totalBlocks = useMemo(() => rows.reduce((n, r) => n + (r.kind === "block" ? 1 : 0), 0), [rows]);
+  const allChecked = useMemo(() => blocks.length > 0 && blocks.every((r) => checked.has(r.key)), [blocks, checked]);
 
   function toggle(r: Row, i: number, shift: boolean) {
     const next = new Set(checked);
@@ -89,19 +98,13 @@ export function ContentStep({
   }
 
   function bulk(patch: "ocultar" | "mostrar" | "destacar" | "normal" | "restablecer") {
-    let e = edits;
-    for (const k of checked) {
-      if (patch === "ocultar") e = setBlockEdit(e, k, { hidden: true });
-      else if (patch === "mostrar") e = setBlockEdit(e, k, { hidden: undefined });
-      else if (patch === "destacar") e = setBlockEdit(e, k, { design: "cita", hidden: undefined });
-      else if (patch === "normal") e = setBlockEdit(e, k, { design: undefined });
-      else e = setBlockEdit(e, k, null);
-    }
-    onChange(e);
+    const p: Partial<BlockEdit> | null =
+      patch === "ocultar" ? { hidden: true } : patch === "mostrar" ? { hidden: undefined } : patch === "destacar" ? { design: "cita", hidden: undefined } : patch === "normal" ? { design: undefined } : null;
+    onChange(setBlockEdits(edits, checked, () => p));
     setMore(false);
   }
 
-  const summary = editsLine(rows, edits);
+  const summary = useMemo(() => editsLine(rows, edits), [rows, edits]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -154,7 +157,7 @@ export function ContentStep({
             <option value="">Persona: todas</option>
             {participants.map((p) => (
               <option key={p} value={p}>
-                {p}
+                {nameOf(p)}
               </option>
             ))}
           </select>
@@ -273,7 +276,7 @@ export function ContentStep({
                   />
                   <button type="button" onClick={() => onOpen(r.key)} className={`min-w-0 text-left ${e?.hidden ? "opacity-50" : ""}`}>
                     <span className="block truncate text-xs text-muted">
-                      {[r.author, r.date ? formatDate(r.date, true) : ""].filter(Boolean).join(" · ") || "Párrafo"}
+                      {[r.author && nameOf(r.author), r.date ? formatDate(r.date, true) : ""].filter(Boolean).join(" · ") || "Párrafo"}
                     </span>
                     <span className={`block truncate text-[13.5px] ${e?.hidden ? "line-through" : ""}`}>{(e?.runs ? e.runs.map((x) => x.t).join("") : r.text) || (r.media.length ? "Foto" : "—")}</span>
                   </button>
@@ -281,6 +284,7 @@ export function ContentStep({
                     {e?.hidden ? <Badge>Oculto</Badge> : null}
                     {isHighlighted(e) ? <Badge tone="suggest">{e?.design === "cita" ? "★ Cita" : "★ Foto"}</Badge> : null}
                     {e?.chapter ? <Badge tone="accent">Capítulo</Badge> : null}
+                    {e?.join ? <Badge>+ siguiente</Badge> : null}
                     {!e?.hidden && !isHighlighted(e) && r.media.length ? <Badge>{r.media.length === 1 ? "1 foto" : `${r.media.length} fotos`}</Badge> : null}
                     {e?.runs ? <Badge>editado</Badge> : null}
                   </span>
@@ -322,9 +326,15 @@ export function Badge({ children, tone }: { children: React.ReactNode; tone?: "s
 /** El resumen del paso en una línea: «712 mensajes · 12 ocultos · 3 destacados». */
 export function editsLine(rows: Row[], edits: BookEdits): string[] {
   const sum = editsSummary(edits);
-  const blocks = rows.filter((r) => r.kind === "block");
+  let count = 0;
+  let messages = false;
+  for (const r of rows) {
+    if (r.kind !== "block") continue;
+    count++;
+    if (r.isMessage) messages = true;
+  }
   return [
-    `${blocks.length.toLocaleString("es")} ${blocks.some((r) => r.kind === "block" && r.isMessage) ? "mensajes" : "párrafos"}`,
+    `${count.toLocaleString("es")} ${messages ? "mensajes" : "párrafos"}`,
     sum.hidden && `${sum.hidden} ${sum.hidden === 1 ? "oculto" : "ocultos"}`,
     sum.highlighted && `${sum.highlighted} ${sum.highlighted === 1 ? "destacado" : "destacados"}`,
     sum.inserts && `${sum.inserts} ${sum.inserts === 1 ? "página añadida" : "páginas añadidas"}`,

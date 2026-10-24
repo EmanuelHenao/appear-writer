@@ -20,9 +20,9 @@ const chatSource: Source = {
 const prose: Source = { id: "p1", name: "Diario", kind: "txt", blocks: parsePlainText("Intro.\n\n# Uno\n\nTexto uno.\n\n# Dos\n\nTexto dos."), meta: {} };
 
 describe("opciones sugeridas", () => {
-  it("un chat sugiere un mensaje por página, capítulos por mes y título con el nombre", () => {
+  it("un chat sugiere mensajes seguidos, capítulos por mes y título con el nombre", () => {
     const o = suggestedBookOptions([chatSource]);
-    expect(o.content.onePerPage).toBe(true);
+    expect(o.content.onePerPage).toBe(false);
     expect(o.content.chaptersByMonth).toBe(true);
     expect(o.cover.title).toBe("Conversaciones con Ana");
     expect(o.cover.subtitle).toBe("2022 – 2024");

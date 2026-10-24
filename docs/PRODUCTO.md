@@ -189,12 +189,14 @@ Aquí decides qué pasa con cada mensaje (o párrafo) antes de exportar. El orig
 | Destacar (D) | Aplica el diseño Cita directamente. |
 | Capítulo aquí | Empieza un capítulo en este mensaje, con título y subtítulo. Usa el diseño de apertura del libro y entra en el índice; la regla automática sigue en el resto. Si es el primer mensaje del capítulo, lo renombra. |
 | Diseño de la página | Normal ●, Cita, Foto completa (texto en la página siguiente ● o sobre la foto con un velo del color profundo) y Foto + texto (una o dos fotos enmarcadas con el texto debajo). Los de foto solo se activan si el mensaje tiene fotos. |
+| Datos del mensaje | Casillas de nombre, fecha y hora solo para este mensaje. Parten de lo elegido para el libro (●) y solo se guarda lo que cambies; «Como el libro» lo deshace. |
+| Juntar el siguiente mensaje en esta página (J) | Solo con «Uno por página» y el diseño Normal. El mensaje siguiente comparte la página con este; marcándolo en varios seguidos se ponen tantos mensajes como quieras en una página, a una letra algo menor. Si no caben, esos mensajes pasan a texto corrido. En la lista se ven con «+ siguiente». |
 | Fotos | Miniaturas con × para quitar cada foto (↺ para volver a ponerla) y dónde van: Junto ●, Página antes (una página solo con las fotos y el mensaje después) o Ambas. |
 | Texto | Editor con formato: negrita, cursiva, subrayado, letra (las cuatro del libro), tamaño, color de la paleta, alineación y quitar formato. Sobre la palabra o frase seleccionada; sin selección, sobre todo el texto. «Volver al original» deshace la edición. |
 | Página antes / después | Añade una página junto al mensaje. |
 | Restablecer este mensaje | Quita todo lo decidido sobre él. |
 
-Atajos en la ficha (también con el foco en la vista previa): ← → cambian de mensaje, H oculta, D destaca, Esc vuelve a la lista.
+Atajos en la ficha (también con el foco en la vista previa): ← → cambian de mensaje, H oculta, D destaca, J junta el siguiente en la misma página (con «Uno por página»), Esc vuelve a la lista.
 
 **Páginas añadidas**
 
@@ -232,7 +234,7 @@ Los valores sugeridos dependen de lo que subas. Los cambios se guardan solos y l
 | Tipografía | Cormorant, Caslon, Lora o Fraunces; tamaño pequeño, normal o grande. | Cormorant, normal |
 | Paleta | Tela verde y oro, Vino y rosa, Tinta azul o Lino natural. | Tela verde y oro |
 | Portada | Tela y oro, Tipográfica, Formas o Lino y etiqueta; título, subtítulo y autor. | Formas para chats, Tela para textos; título «Conversaciones con …» y los años del chat |
-| Contenido | Cómo se ven los mensajes (uno por página, burbujas de chat o seguidos); en burbujas, quién va a la derecha; capítulos; nombre, fecha y hora de cada mensaje; ornamentos, portadilla, índice y dedicatoria. | Un mensaje por página · nombre y fecha · ornamentos, portadilla e índice |
+| Contenido | Cómo se ven los mensajes (uno por página, burbujas de chat o seguidos); en burbujas, quién va a la derecha; capítulos; **Personas:** cómo se llama cada persona del chat en el libro (vacío deja el nombre del chat; se aplica a la vista previa, el PDF, el EPUB, los PNG y la lista de mensajes, sin tocar el original); nombre, fecha y hora de cada mensaje (para todo el libro; cada mensaje puede cambiarlo en su ficha); ornamentos, portadilla, índice y dedicatoria. | Mensajes seguidos · nombre y fecha · ornamentos, portadilla e índice |
 | Ortografía | Revisión sin IA (ver más abajo). | Sin revisar |
 | Imágenes | Fotos del chat, fotos en las aperturas de capítulo (tuyas o de bancos) o solo texto. | Fotos del chat, si el .zip las trae |
 | Ayuda de la IA | Organizar en capítulos, corregir ortografía, sugerir título, diseñar portada. | Todo apagado |
@@ -276,6 +278,7 @@ Las tildes que dependen del sentido de la frase (esta/está, si/sí, tu/tú) no 
 - **Todo el libro, 40 páginas a la vez:** la vista previa tiene el libro entero y muestra una ventana de 40 páginas que se mueve sola al pasar de página, al elegir un mensaje o al usar las miniaturas. El número de página es siempre el real («306–307 / 648»).
 - **Al editar no se recarga:** cuando cambias algo en el paso Contenido, solo se vuelve a maquetar el capítulo afectado; los números de página, las cabeceras y el índice se actualizan y la vista se queda donde estabas (o va a la página que acabas de añadir). Los cambios de opciones del libro (letra, tamaño, paleta…) sí recargan la vista previa entera.
 - **Clic en un mensaje** abre su ficha en el paso Contenido.
+- **Libros enormes sin congelar la pestaña:** el libro se maqueta a tramos y, mientras tanto, la vista previa muestra «Maquetando el libro… N páginas». Un chat de 128.000 mensajes tarda alrededor de 40 segundos, y el estudio sigue respondiendo mientras tanto.
 
 ### Generar libro
 
@@ -284,6 +287,7 @@ Las tildes que dependen del sentido de la frase (esta/está, si/sí, tu/tú) no 
   - PDF de imprenta con sangrado;
   - EPUB 3;
   - ZIP de PNG por página.
+- **Libros enormes:** el PDF de más de 250 páginas se genera por tandas y se une (un chat de 128.000 mensajes, uno por página, sale en unos 4 minutos; en «Seguidos», unas 12.000 páginas en poco más de 1 minuto). Hasta 250 páginas el PDF sale además etiquetado (accesible). El ZIP de PNG empieza a descargarse en cuanto está la primera imagen y no ocupa memoria de más, sea cual sea el número de páginas.
 
 ## 6. Galería
 

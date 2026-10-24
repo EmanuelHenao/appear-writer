@@ -37,6 +37,10 @@ export const BlockEditSchema = z.object({
   /** Empieza un capítulo en este bloque. */
   chapter: z.object({ title: z.string().max(160), subtitle: z.string().max(200).optional() }).optional(),
   photos: z.object({ hidden: z.array(z.string()).max(200).default([]), place: z.enum(PHOTO_PLACES).default("junto") }).optional(),
+  /** Con «Uno por página»: el mensaje siguiente va en la misma página. */
+  join: z.boolean().optional(),
+  /** Nombre, fecha y hora de este mensaje cuando difieren de lo elegido para el libro. */
+  meta: z.object({ name: z.boolean().optional(), date: z.boolean().optional(), time: z.boolean().optional() }).optional(),
 });
 export type BlockEdit = z.infer<typeof BlockEditSchema>;
 
@@ -77,17 +81,30 @@ export function isEmptyEdit(e: BlockEdit | undefined): boolean {
     !e.runs &&
     !e.align &&
     !e.chapter &&
+    !e.join &&
+    (!e.meta || (e.meta.name === undefined && e.meta.date === undefined && e.meta.time === undefined)) &&
     (!e.photos || (!e.photos.hidden.length && e.photos.place === "junto"))
   );
 }
 
 /** Aplica un cambio a un bloque y quita la entrada si queda vacía. */
 export function setBlockEdit(edits: BookEdits, key: string, patch: Partial<BlockEdit> | null): BookEdits {
+  return setBlockEdits(edits, [key], () => patch);
+}
+
+/**
+ * Aplica un cambio a muchos bloques de una vez: copia `blocks` una sola vez
+ * (llamar a setBlockEdit en un bucle lo copiaría por cada bloque).
+ */
+export function setBlockEdits(edits: BookEdits, keys: Iterable<string>, patchOf: (key: string) => Partial<BlockEdit> | null): BookEdits {
   const blocks = { ...edits.blocks };
-  const next: BlockEdit = patch === null ? {} : { ...blocks[key], ...patch };
-  for (const k of Object.keys(next) as (keyof BlockEdit)[]) if (next[k] === undefined) delete next[k];
-  if (isEmptyEdit(next)) delete blocks[key];
-  else blocks[key] = next;
+  for (const key of keys) {
+    const patch = patchOf(key);
+    const next: BlockEdit = patch === null ? {} : { ...blocks[key], ...patch };
+    for (const k of Object.keys(next) as (keyof BlockEdit)[]) if (next[k] === undefined) delete next[k];
+    if (isEmptyEdit(next)) delete blocks[key];
+    else blocks[key] = next;
+  }
   return { ...edits, blocks };
 }
 
